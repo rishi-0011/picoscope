@@ -1,0 +1,3 @@
+Scope: ps5000a
+Serial no.: None
+Hardware resolution: 14BIT
