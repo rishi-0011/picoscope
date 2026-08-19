@@ -260,7 +260,7 @@ def build_waveform_ui(parent_frame, app):
     
     try:
         from PIL import Image, ImageTk
-        logo_path = r"c:\Users\MaharshiM\Music\Picoscope\images\extracted_logo.png"
+        logo_path = r"c:\Users\MaharshiM\Music\Picoscope\images\iaas_logo.png"
         if os.path.exists(logo_path):
             img = Image.open(logo_path)
             target_width = 130 
