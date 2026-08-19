@@ -233,11 +233,15 @@ class PicoScopeApp:
 
     def _perform_scan(self):
         self.is_scope_connected = self.try_connect_scope()
+        self.is_demo_mode = False
         if self.is_scope_connected:
             self.show_clean_result_screen("Scope found", bg_color="#ffffff", text_color="#16a34a", is_error=False)
             self.root.after(1500, self.show_setup_screen)
         else:
-            self.show_clean_result_screen("Scope not found", bg_color="#ffffff", text_color="#dc2626", is_error=True)
+            self.is_scope_connected = True
+            self.is_demo_mode = True
+            self.show_clean_result_screen("Hardware missing. Entering DEMO MODE...", bg_color="#ffffff", text_color="#f59e0b", is_error=False)
+            self.root.after(2000, self.show_setup_screen)
 
     def show_setup_screen(self):
         self.root.geometry("800x500")

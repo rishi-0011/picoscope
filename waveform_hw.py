@@ -26,6 +26,11 @@ def hide_splash():
         pass
 
 def init_scope(app, config):
+    if getattr(app, 'is_demo_mode', False):
+        app.chandle = -1
+        app.status = {"openunit": 0}
+        print("Demo mode initialized.")
+        return
     try:
         from picosdk.functions import assert_pico_ok, mV2adc
         
@@ -114,6 +119,30 @@ def init_scope(app, config):
 
 def run_hardware_block(app, config, total_time_ns, max_mv_A, max_mv_B, time_str, range_enum_A, range_enum_B, timebase, noSamples, res_str):
     c_info = read_control_info()
+    pre_trig_percent = float(c_info.get('Pre-trigger [%]', 0)) / 100.0
+    thresh_percent = float(c_info.get('Threshold [%]', 18)) / 100.0
+
+    if getattr(app, 'is_demo_mode', False):
+        app.update_hardware_requested = False
+        adc_max_val = 32512 if res_str == "8 bits" else 32767
+        pre_trig = int(noSamples * pre_trig_percent)
+        
+        ch1_active = config.get('ch1_active', True)
+        ch2_active = config.get('ch2_active', False)
+        if ch1_active:
+            trig_ch_name = "CHANNEL_A"
+        elif ch2_active and not ch1_active:
+            trig_ch_name = "CHANNEL_B"
+        else:
+            trig_ch_name = "CHANNEL_A"
+            
+        polarity = config.get('polarity', 'Negative')
+        trig_dir_name = "RISING" if polarity == 'Positive' else "FALLING"
+        print(f"\n[DEMO MODE] Hardware Trigger Configured -> Source: {trig_ch_name} | Direction: {trig_dir_name}\n")
+        
+        app.capture_context = (range_enum_A, range_enum_B, noSamples, 10.0, max_mv_A, max_mv_B, time_str, adc_max_val, pre_trig)
+        return True
+
     scope_m = c_info.get('Scope', 'ps5000a')
     ps = PicoScopeProxy(scope_m)
     from picosdk.functions import mV2adc
@@ -135,20 +164,45 @@ def run_hardware_block(app, config, total_time_ns, max_mv_A, max_mv_B, time_str,
             except Exception as e:
                 print("SetDeviceResolution error:", e)
 
-            trig_ch = ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"] if ch1_active else ps.PS5000A_CHANNEL["PS5000A_CHANNEL_B"]
+            # Source selection logic
+            if ch1_active:
+                trig_ch = ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"]
+            elif ch2_active and not ch1_active:
+                trig_ch = ps.PS5000A_CHANNEL["PS5000A_CHANNEL_B"]
+            else:
+                trig_ch = ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"] # Default fallback
             
             polarity = config.get('polarity', 'Negative')
-            exp_val_str = config.get('Expected Voltage [kV]' if getattr(app, 'ch1_type', 'Voltage') == 'Voltage' else 'Expected Current [A]', 150)
-            exp_val = float(exp_val_str) if str(exp_val_str).strip() != '' else 150.0
-            exp_v = exp_val * 1000.0 if getattr(app, 'ch1_type', 'Voltage') == 'Voltage' else exp_val
             
-            att = float(config.get('ch1_int', 1)) * float(config.get('ch1_ext', 1))
+            # Use Channel A's or Channel B's expected value based on the trigger channel
+            if trig_ch == ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"]:
+                exp_val_str = config.get('Expected Voltage [kV]' if getattr(app, 'ch1_type', 'Voltage') == 'Voltage' else 'Expected Current [A]', 150)
+                att = float(config.get('ch1_int', 1)) * float(config.get('ch1_ext', 1))
+                is_voltage = getattr(app, 'ch1_type', 'Voltage') == 'Voltage'
+            else:
+                exp_val_str = config.get('Expected Voltage [kV]' if getattr(app, 'ch2_type', 'Voltage') == 'Voltage' else 'Expected Current [A]', 150)
+                att = float(config.get('ch2_int', 1)) * float(config.get('ch2_ext', 1))
+                is_voltage = getattr(app, 'ch2_type', 'Voltage') == 'Voltage'
+                
+            exp_val = float(exp_val_str) if str(exp_val_str).strip() != '' else 150.0
+            exp_v = exp_val * 1000.0 if is_voltage else exp_val
+            
             scope_input_v = exp_v / att if att != 0 else exp_v
             
-            trig_thresh_mv = int((scope_input_v * 0.10) * 1000)
+            trig_thresh_mv = int((scope_input_v * thresh_percent) * 1000)
+            
+            # Trigger direction and threshold negation for negative polarity
+            if polarity == 'Positive':
+                trig_dir = ps.PS5000A_THRESHOLD_DIRECTION["PS5000A_RISING"]
+            else:
+                trig_dir = ps.PS5000A_THRESHOLD_DIRECTION["PS5000A_FALLING"]
+                trig_thresh_mv = -abs(trig_thresh_mv)
             
             trig_adc = mV2adc(trig_thresh_mv, range_enum_A if ch1_active else range_enum_B, maxADC)
-            trig_dir = ps.PS5000A_THRESHOLD_DIRECTION["PS5000A_RISING"] if polarity == 'Positive' else ps.PS5000A_THRESHOLD_DIRECTION["PS5000A_FALLING"]
+            
+            trig_ch_name = "CHANNEL_A" if trig_ch == ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"] else "CHANNEL_B"
+            trig_dir_name = "RISING" if polarity == 'Positive' else "FALLING"
+            print(f"\n[HARDWARE] Trigger Configured -> Source: {trig_ch_name} | Direction: {trig_dir_name} | Threshold: {trig_thresh_mv} mV\n")
             
             ps.ps5000aSetChannel(app.chandle, ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"], 1 if ch1_active else 0, 1, range_enum_A, 0)
             ps.ps5000aSetChannel(app.chandle, ps.PS5000A_CHANNEL["PS5000A_CHANNEL_B"], 1 if ch2_active else 0, 1, range_enum_B, 0)
@@ -168,14 +222,19 @@ def run_hardware_block(app, config, total_time_ns, max_mv_A, max_mv_B, time_str,
         timebase += 1
         status_tb = ps.ps5000aGetTimebase2(app.chandle, timebase, noSamples, ctypes.byref(timeIntervalns), ctypes.byref(returnedMaxSamples), 0)
     
-    pre_trig = int(noSamples * 0.10)
-    if pre_trig < 2: pre_trig = 2
+    pre_trig = int(noSamples * pre_trig_percent)
     post_trig = noSamples - pre_trig
     
     status_run = ps.ps5000aRunBlock(app.chandle, pre_trig, post_trig, timebase, None, 0, None, None)
     
     if status_run != 0:
         print("Failed to start run block:", status_run)
+        app.is_scope_connected = False
+        try:
+            ps = PicoScopeProxy(c_info.get('Scope', 'ps5000a'))
+            ps.ps5000aCloseUnit(app.chandle)
+        except: pass
+        app.chandle = None
         return False
         
     adc_max_val = 32512 if res_str == "8 bits" else 32767
@@ -183,16 +242,57 @@ def run_hardware_block(app, config, total_time_ns, max_mv_A, max_mv_B, time_str,
     return True
 
 def is_hardware_ready(app):
+    if getattr(app, 'is_demo_mode', False):
+        import time
+        time.sleep(0.5)
+        return True
     if not getattr(app, 'chandle', None): return False
     c_info = read_control_info()
     scope_m = c_info.get('Scope', 'ps5000a')
     ps = PicoScopeProxy(scope_m)
     ready = ctypes.c_int16(0)
-    ps.ps5000aIsReady(app.chandle, ctypes.byref(ready))
-    return ready.value != 0
+    try:
+        status = ps.ps5000aIsReady(app.chandle, ctypes.byref(ready))
+        if status != 0:
+            print(f"Scope disconnected or not responding! Status: {status}")
+            app.is_scope_connected = False
+            try:
+                ps.ps5000aCloseUnit(app.chandle)
+            except: pass
+            app.chandle = None
+            return False
+        return ready.value != 0
+    except Exception as e:
+        print(f"Hardware error during polling: {e}")
+        app.is_scope_connected = False
+        try:
+            ps.ps5000aCloseUnit(app.chandle)
+        except: pass
+        app.chandle = None
+        return False
 
 def fetch_hardware_data(app, config):
     import numpy as np
+    
+    if getattr(app, 'is_demo_mode', False):
+        ch1_active = config.get('ch1_active', True)
+        ch2_active = config.get('ch2_active', False)
+        r_enum_A, r_enum_B, nSamp, tInt, mx_mv_A, mx_mv_B, t_str, adc_max_val, pre_trig_samples = app.capture_context
+        
+        x = np.linspace(0, 10, nSamp)
+        polarity = config.get('polarity', 'Positive')
+        sign = 1 if polarity == 'Positive' else -1
+        
+        ch1_type = getattr(app, 'ch1_type', 'Voltage')
+        ch2_type = getattr(app, 'ch2_type', 'Current')
+        
+        exp_v = float(config.get('Expected Voltage [kV]' if ch1_type == 'Voltage' else 'Expected Current [A]', 150))
+        exp_i = float(config.get('Expected Current [A]' if ch2_type == 'Current' else 'Expected Voltage [kV]', 300))
+        
+        y_data_A = (sign * (exp_v * 0.8) * np.sin(x)) if ch1_active else None
+        y_data_B = (sign * (exp_i * 0.8) * np.cos(x)) if ch2_active else None
+        
+        return y_data_A, y_data_B, tInt, pre_trig_samples, mx_mv_A, mx_mv_B, nSamp, t_str
     c_info = read_control_info()
     scope_m = c_info.get('Scope', 'ps5000a')
     ps = PicoScopeProxy(scope_m)

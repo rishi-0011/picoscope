@@ -14,6 +14,8 @@ def read_control_info():
                     if k.lower().startswith('scope'): config['Scope'] = v
                     elif k.lower().startswith('serial'): config['Serial no.'] = v
                     elif k.lower().startswith('hardware'): config['Hardware resolution'] = v
+                    elif k.lower().startswith('pre-trigger'): config['Pre-trigger [%]'] = v
+                    elif k.lower().startswith('threshold'): config['Threshold [%]'] = v
     return config
 
 class PicoScopeProxy:

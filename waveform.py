@@ -172,16 +172,27 @@ def build_waveform_ui(parent_frame, app):
     status_frame = tk.Frame(top_bar, bg="#333333")
     status_frame.pack(side="right", padx=20, pady=5)
     
-    status_canvas = tk.Canvas(status_frame, width=16, height=16, bg="#333333", highlightthickness=0)
-    status_canvas.pack(side="left")
+    parent_frame.status_canvas = tk.Canvas(status_frame, width=16, height=16, bg="#333333", highlightthickness=0)
+    parent_frame.status_canvas.pack(side="left")
     
     is_conn = bool(app.chandle)
     fill_color = "#32cd32" if is_conn else "#ff4c4c"
     
-    status_canvas.create_oval(2, 2, 14, 14, fill=fill_color, outline="white")
+    parent_frame.led = parent_frame.status_canvas.create_oval(2, 2, 14, 14, fill=fill_color, outline="white")
     
     status_text = "Scope Connected" if is_conn else "Scope Disconnected"
-    tk.Label(status_frame, text=status_text, bg="#333333", fg=fill_color, font=("Segoe UI", 10, "bold")).pack(side="left", padx=5)
+    parent_frame.status_label = tk.Label(status_frame, text=status_text, bg="#333333", fg=fill_color, font=("Segoe UI", 10, "bold"))
+    parent_frame.status_label.pack(side="left", padx=5)
+
+    # --- NEW LOCAL STATUS UPDATE FUNCTION ---
+    def update_local_status(is_connected):
+        color = "#32cd32" if is_connected else "#ff4c4c"
+        text = "Scope Connected" if is_connected else "Scope Disconnected"
+        if hasattr(parent_frame, 'status_canvas') and hasattr(parent_frame, 'led'):
+            parent_frame.status_canvas.itemconfig(parent_frame.led, fill=color)
+        if hasattr(parent_frame, 'status_label'):
+            parent_frame.status_label.config(text=text, fg=color)
+    # ----------------------------------------
 
     total_shots = 1
     if "N° of Shots" in config:
@@ -249,7 +260,7 @@ def build_waveform_ui(parent_frame, app):
     
     try:
         from PIL import Image, ImageTk
-        logo_path = r"c:\Users\MaharshiM\Music\Picoscope\extracted_logo.png"
+        logo_path = r"c:\Users\MaharshiM\Music\Picoscope\images\extracted_logo.png"
         if os.path.exists(logo_path):
             img = Image.open(logo_path)
             target_width = 130 
@@ -306,12 +317,12 @@ def build_waveform_ui(parent_frame, app):
         bf.pack(side="left", expand=True, fill="both", padx=1)
         app.box_frames.append(bf)
         
-    lbl_waiting = tk.Label(progress_frame, text="waiting for waveform...", bg="#8c97a8", fg="#0044cc", font=("Segoe UI", 9, "italic"))
+    lbl_waiting = tk.Label(progress_frame, text="waiting for waveform... ⏳", bg="#8c97a8", fg="#000000", font=("Segoe UI", 9, "italic", "bold"))
     lbl_waiting.pack(side="top", pady=(5, 0))
     app.lbl_waiting = lbl_waiting
 
     app._blink_state = True
-    app._blink_base_color = "#0044cc"
+    app._blink_base_color = "#000000"
 
     def blink_waiting():
         if not hasattr(app, 'lbl_waiting') or not app.lbl_waiting.winfo_exists():
@@ -322,6 +333,14 @@ def build_waveform_ui(parent_frame, app):
             return
             
         app._blink_state = not app._blink_state
+        
+        # Animate the hourglass by swapping emojis
+        current_text = app.lbl_waiting.cget("text")
+        if "⏳" in current_text:
+            app.lbl_waiting.config(text=current_text.replace("⏳", "⌛"))
+        elif "⌛" in current_text:
+            app.lbl_waiting.config(text=current_text.replace("⌛", "⏳"))
+            
         if app._blink_state:
             app.lbl_waiting.config(fg=app._blink_base_color)
         else:
@@ -420,6 +439,18 @@ def build_waveform_ui(parent_frame, app):
         'B_freq': [], 'B_max': [], 'B_min': []
     }
 
+    def start_background_polling():
+        if app.capture_state != "DEAD": return
+        try:
+            conn = app.try_connect_scope()
+            if conn != app.is_scope_connected:
+                app.is_scope_connected = conn
+                update_local_status(conn)
+        except Exception:
+            pass
+        if hasattr(parent_frame, 'winfo_exists') and parent_frame.winfo_exists():
+            app.waveform_job = parent_frame.after(1500, start_background_polling)
+
     def update_graph():
         if app.capture_state != "IDLE": return
         if not app.chandle:
@@ -446,6 +477,11 @@ def build_waveform_ui(parent_frame, app):
             )
             
             if not success:
+                if not getattr(app, 'is_scope_connected', True):
+                    app.capture_state = "DEAD"
+                    update_local_status(False)
+                    start_background_polling()
+                    return
                 app.capture_state = "IDLE"
                 app.waveform_job = parent_frame.after(100, update_graph)
                 return
@@ -456,7 +492,13 @@ def build_waveform_ui(parent_frame, app):
                 if not getattr(app, 'chandle', None) or app.capture_state != "WAITING": return
                 
                 if not is_hardware_ready(app):
+                    if not getattr(app, 'is_scope_connected', True):
+                        app.capture_state = "DEAD"
+                        update_local_status(False)
+                        start_background_polling()
+                        return
                     app.waveform_job = parent_frame.after(10, poll_ready)
+                    return
                 else:
                     app.capture_state = "READY"
                     fetch_and_draw()
@@ -480,13 +522,13 @@ def build_waveform_ui(parent_frame, app):
                     def countdown(seconds_left):
                         if seconds_left > 0:
                             if hasattr(app, 'lbl_waiting'):
-                                app.lbl_waiting.config(text=f"Waiting {seconds_left}s for next shot...")
-                                app._blink_base_color = "#ff9900"
+                                app.lbl_waiting.config(text=f"Waiting {seconds_left}s for next shot... ⏳")
+                                app._blink_base_color = "#000000"
                             parent_frame.after(1000, lambda: countdown(seconds_left - 1))
                         else:
                             if hasattr(app, 'lbl_waiting'):
-                                app.lbl_waiting.config(text="waiting for waveform...")
-                                app._blink_base_color = "#0044cc"
+                                app.lbl_waiting.config(text="waiting for waveform... ⏳")
+                                app._blink_base_color = "#000000"
                             app.update_hardware_requested = True
                             app.waveform_job = parent_frame.after(10, update_graph)
                     countdown(10)

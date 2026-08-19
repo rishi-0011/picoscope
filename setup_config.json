@@ -1,16 +1,16 @@
 {
     "Impulse Type": "Lightning",
     "Polarity": "Positive",
-    "Expected Voltage [kV]": "4",
+    "Expected Voltage [kV]": "6",
     "Expected Current [A]": "300",
-    "N\u00b0 of Shots": "1",
+    "N\u00b0 of Shots": "3",
     "Window Time": "100 us",
     "ch1_active": true,
     "ch1_type": "Voltage",
     "ch1_int": "100",
     "ch1_ext": "10",
     "ch2_active": false,
-    "ch2_type": "Current",
-    "ch2_int": "200",
+    "ch2_type": "Voltage",
+    "ch2_int": "100",
     "ch2_ext": "10"
 }

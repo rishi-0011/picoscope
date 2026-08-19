@@ -86,9 +86,14 @@ def build_setup_ui(parent_frame, app=None):
         lbl_review.bind("<Button-1>", lambda e: show_empty_tab_page(parent_frame, app, "Review"))
         lbl_analysis.bind("<Button-1>", lambda e: show_empty_tab_page(parent_frame, app, "Analysis"))
     
+    # Exit Button
+    if app:
+        exit_btn = tk.Button(tab_frame, text="EXIT", bg="#facc15", fg="black", font=("Segoe UI", 10, "bold"), relief="raised", borderwidth=2, width=12, height=1, pady=0, cursor="hand2", command=app.root.quit)
+        exit_btn.pack(side="right", padx=10, pady=2)
+
     # Status LED & Label
     status_frame = tk.Frame(tab_frame, bg="#333333")
-    status_frame.place(relx=0.8, rely=0.5, anchor="center")
+    status_frame.pack(side="right", padx=20, pady=5)
     
     parent_frame.status_canvas = tk.Canvas(status_frame, width=16, height=16, bg="#333333", highlightthickness=0)
     parent_frame.status_canvas.pack(side="left")
@@ -96,11 +101,6 @@ def build_setup_ui(parent_frame, app=None):
     
     parent_frame.status_label = tk.Label(status_frame, text="Scope Connected", bg="#333333", fg="#32cd32", font=("Segoe UI", 10, "bold"))
     parent_frame.status_label.pack(side="left", padx=5)
-    
-    # Exit Button
-    if app:
-        exit_btn = tk.Button(tab_frame, text="EXIT", bg="#facc15", fg="black", font=("Segoe UI", 10, "bold"), relief="raised", borderwidth=2, width=12, height=1, pady=0, cursor="hand2", command=app.root.quit)
-        exit_btn.pack(side="right", padx=10, pady=2)
     
     # Main content area wrapper for centering
     center_wrapper = tk.Frame(parent_frame, bg="#8c97a8")
@@ -128,7 +128,7 @@ def build_setup_ui(parent_frame, app=None):
     
     # IAAS Logo
     try:
-        iaas_img_path = r"c:\Users\MaharshiM\Music\Picoscope\extracted_logo.png"
+        iaas_img_path = r"c:\Users\MaharshiM\Music\Picoscope\images\extracted_logo.png"
         if os.path.exists(iaas_img_path):
             iaas_img = Image.open(iaas_img_path)
             iaas_img.thumbnail((450, 150)) # Resize to fit nicely (increased by 50%)
@@ -395,7 +395,15 @@ def build_setup_ui(parent_frame, app=None):
             save_config(save_dict)
             
             if hasattr(app, 'show_waveform_screen'):
-                app.show_waveform_screen()
+                if hasattr(parent_frame, 'setup_poll_job') and parent_frame.setup_poll_job:
+                    parent_frame.after_cancel(parent_frame.setup_poll_job)
+                    parent_frame.setup_poll_job = None
+                
+                if hasattr(parent_frame, 'enter_btn'):
+                    parent_frame.enter_btn.config(state="disabled", text="Opening...")
+                
+                # Wait 1000ms to allow PicoSDK to release EnumerateUnits locks before OpenUnit
+                parent_frame.after(1000, app.show_waveform_screen)
             
     enter_btn = tk.Button(right_panel, text="ENTER", bg="#32cd32", fg="black", font=("Segoe UI", 10, "bold"), relief="raised", borderwidth=2, width=12, height=1, pady=0, cursor="hand2", command=on_enter_click)
     enter_btn.pack(pady=(10, 0), padx=10, anchor="e")
@@ -486,6 +494,20 @@ def build_setup_ui(parent_frame, app=None):
     c2_int = saved_config.get("ch2_int", "200.0")
     c2_ext = saved_config.get("ch2_ext", "10.0")
     create_channel(channels_frame, 1, "Channel 2", c2_active, c2_type, c2_int, c2_ext)
+    
+    def poll_hardware_setup():
+        if app and not getattr(app, 'is_demo_mode', False):
+            try:
+                conn = app.try_connect_scope()
+                if conn != app.is_scope_connected:
+                    app.is_scope_connected = conn
+                    update_status(parent_frame, conn)
+            except Exception:
+                pass
+        if hasattr(parent_frame, 'winfo_exists') and parent_frame.winfo_exists():
+            parent_frame.setup_poll_job = parent_frame.after(1500, poll_hardware_setup)
+            
+    poll_hardware_setup()
 
 def update_status(parent_frame, is_connected):
     if not hasattr(parent_frame, 'status_canvas'): return
@@ -501,17 +523,21 @@ def update_status(parent_frame, is_connected):
     for w in parent_frame.input_widgets:
         try:
             from tkinter import ttk
-            if isinstance(w, ttk.Combobox):
-                w.config(state="readonly" if is_connected else "disabled")
-            else:
-                w.config(state="normal" if is_connected else "disabled")
+            if hasattr(w, 'winfo_exists') and w.winfo_exists():
+                if isinstance(w, ttk.Combobox):
+                    w.config(state="readonly" if is_connected else "disabled")
+                else:
+                    w.config(state="normal" if is_connected else "disabled")
         except Exception:
             pass
             
     if is_connected and hasattr(parent_frame, 'enter_btn') and hasattr(parent_frame, 'ch_buttons'):
-        any_active = any(b["text"] == "Active" for b in parent_frame.ch_buttons)
-        if not any_active:
-            parent_frame.enter_btn.config(state="disabled", bg="#555555")
+        try:
+            any_active = any(b.winfo_exists() and b["text"] == "Active" for b in parent_frame.ch_buttons)
+            if not any_active:
+                if hasattr(parent_frame.enter_btn, 'winfo_exists') and parent_frame.enter_btn.winfo_exists():
+                    parent_frame.enter_btn.config(state="disabled", bg="#555555")
+        except: pass
 
 def show_empty_tab_page(parent_frame, app, active_tab):
     for widget in parent_frame.winfo_children():
