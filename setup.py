@@ -116,7 +116,7 @@ def build_setup_ui(parent_frame, app=None):
         from PIL import Image, ImageTk
         import os
         # Loading from images folder to restore the original Carona Power logo
-        img_path = r"c:\Users\MaharshiM\Music\Picoscope\images\iaas_logo.png"
+        img_path = r"c:\Users\MaharshiM\Music\Picoscope\images\carona power.jpeg"
         if os.path.exists(img_path):
             img = Image.open(img_path)
             img.thumbnail((390, 130)) # Resize to fit nicely (Increased by 30%)

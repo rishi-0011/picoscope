@@ -205,7 +205,7 @@ class PicoScopeApp:
         progress_card.columnconfigure(0, weight=1)
 
         try:
-            img_path = r"c:\Users\MaharshiM\Music\Picoscope\images\iaas_logo.png"
+            img_path = r"c:\Users\MaharshiM\Music\Picoscope\images\carona power.jpeg"
             if os.path.exists(img_path):
                 img = Image.open(img_path)
                 img.thumbnail((390, 130))
@@ -268,7 +268,7 @@ class PicoScopeApp:
         clean_card.columnconfigure(0, weight=1)
         
         try:
-            img_path = r"c:\Users\MaharshiM\Music\Picoscope\images\iaas_logo.png"
+            img_path = r"c:\Users\MaharshiM\Music\Picoscope\images\carona power.jpeg"
             if os.path.exists(img_path):
                 img = Image.open(img_path)
                 img.thumbnail((390, 130))
