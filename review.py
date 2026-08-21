@@ -1,14 +1,144 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, filedialog, messagebox
 import matplotlib
 matplotlib.use("TkAgg")
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2Tk
 from matplotlib.figure import Figure
 import numpy as np
 import os
+from scipy.optimize import curve_fit
+from scipy.signal import find_peaks
 
+# ----------------------------------------------------------------------
+# CALCULATION ENGINE (Exact math from impulse_calculator.py)
+# ----------------------------------------------------------------------
+def calculate_iec_parameters(time, raw_voltage):
+    t = time
+    v_raw = raw_voltage
+    
+    # Polarity detection
+    polarity = -1 if abs(np.min(v_raw)) > abs(np.max(v_raw)) else 1
+    v = v_raw * polarity
+
+    idx_peak = int(np.argmax(v))
+    Vext = v[idx_peak]
+    tp = t[idx_peak]
+
+    def _crossing_time(target, tt, vv):
+        idx = np.where(vv >= target)[0]
+        if len(idx) == 0:
+            raise ValueError("Signal never reaches requested level.")
+        idx = idx[0]
+        if idx == 0: return tt[0]
+        t0, t1 = tt[idx - 1], tt[idx]
+        v0, v1 = vv[idx - 1], vv[idx]
+        frac = (target - v0) / (v1 - v0) if (v1 - v0) != 0 else 0
+        return t0 + frac * (t1 - t0)
+
+    def _double_exp(tt, A, alpha, beta_p, t0):
+        tau = np.clip(tt - t0, 0, None)
+        return A * (np.exp(-alpha * tau) - np.exp(-beta_p * tau))
+
+    # Front Timing (T1, O1)
+    front_t, front_v = t[: idx_peak + 1], v[: idx_peak + 1]
+    v30, v90 = 0.30 * Vext, 0.90 * Vext
+    
+    try:
+        t30 = _crossing_time(v30, front_t, front_v)
+        t90 = _crossing_time(v90, front_t, front_v)
+        T1 = 1.67 * (t90 - t30)
+        O1 = t30 - 0.3 * (t90 - t30)
+    except Exception:
+        t30, t90, T1, O1 = None, None, None, None
+
+    # Tail Timing (T2)
+    tail_t, tail_v = t[idx_peak:], v[idx_peak:]
+    v50 = 0.50 * Vext
+    idx50 = np.where(tail_v <= v50)[0]
+    
+    t50, T2 = None, None
+    if len(idx50) > 0 and O1 is not None:
+        idx50 = idx50[0]
+        if idx50 > 0:
+            t0_, t1_ = tail_t[idx50 - 1], tail_t[idx50]
+            v0_, v1_ = tail_v[idx50 - 1], tail_v[idx50]
+            frac = (v50 - v0_) / (v1_ - v0_) if (v1_ - v0_) != 0 else 0
+            t50 = t0_ + frac * (t1_ - t0_)
+            T2 = t50 - O1
+
+    # Base Curve Fit & Overshoot Beta
+    base = np.zeros_like(v)
+    base_peak = Vext
+    beta_prime = 0.0
+    
+    if T1 is not None and T2 is not None and O1 is not None:
+        tail_start = tp + 4 * T1
+        mask_fit = ((t >= O1) & (t < t90)) | (t > tail_start)
+        if mask_fit.sum() < 5:
+            mask_fit = t >= O1  # fallback
+
+        A0 = Vext * 1.3
+        alpha0 = np.log(2) / max(T2, 1e-9)
+        beta0 = 3 / max(T1, 1e-9)
+        try:
+            popt, _ = curve_fit(
+                lambda tt, A, a, b: _double_exp(tt, A, a, b, O1),
+                t[mask_fit], v[mask_fit],
+                p0=[A0, alpha0, beta0], maxfev=50000,
+            )
+            base = _double_exp(t, popt[0], popt[1], popt[2], O1)
+            base_peak = np.nanmax(base)
+            beta_os = Vext - base_peak
+            beta_prime = (beta_os / Vext) * 100.0 if Vext > 0 else 0
+        except Exception:
+            base = v
+
+    # Oscillation Frequency
+    f_osc = np.nan
+    if T1 is not None:
+        win = (t >= tp - 0.3 * T1) & (t <= tp + 10 * T1)
+        t_seg, v_seg = t[win], v[win]
+        if len(v_seg) > 5:
+            prom = 0.01 * Vext 
+            pk, _ = find_peaks(v_seg, prominence=prom)
+            tr, _ = find_peaks(-v_seg, prominence=prom)
+            extrema_t = np.sort(np.concatenate([t_seg[pk], t_seg[tr]]))
+            if len(extrema_t) >= 2:
+                half_periods = np.diff(extrema_t)
+                period = 2 * np.mean(half_periods)
+                f_osc = 1.0 / period
+
+    v_peak_plot = Vext * polarity
+    base_plot = base * polarity
+    
+    return {
+        'time_us': t * 1e6, 
+        'raw_v': v_raw,
+        'smooth_v': base_plot,
+        'v_peak': v_peak_plot,
+        'v30': v30 * polarity if 'v30' in locals() else 0,
+        'v50': v50 * polarity if 'v50' in locals() else 0,
+        'v90': v90 * polarity if 'v90' in locals() else 0,
+        't30_us': t30 * 1e6 if t30 else None,
+        't90_us': t90 * 1e6 if t90 else None,
+        't50_us': t50 * 1e6 if t50 else None,
+        't1_us': T1 * 1e6 if T1 else None,
+        't2_us': T2 * 1e6 if T2 else None,
+        'o1_us': O1 * 1e6 if O1 else None,
+        'beta_pct': beta_prime,
+        'osc_freq_mhz': f_osc * 1e-6 if not np.isnan(f_osc) else 0
+    }
+
+# ----------------------------------------------------------------------
+# SMART NAVIGATION TOOLBAR (Matching impulse_calculator.py)
+# ----------------------------------------------------------------------
+class ReviewNavToolbar(NavigationToolbar2Tk):
+    toolitems = [t for t in NavigationToolbar2Tk.toolitems if t[0] not in ('Back', 'Forward')]
+
+# ----------------------------------------------------------------------
+# REVIEW TAB UI BUILDER
+# ----------------------------------------------------------------------
 def build_review_ui(parent_frame, app=None):
-    # Clear previous contents
     for widget in parent_frame.winfo_children():
         widget.destroy()
 
@@ -17,6 +147,9 @@ def build_review_ui(parent_frame, app=None):
     parent_frame.rowconfigure(0, weight=0)
     parent_frame.rowconfigure(1, weight=1)
     parent_frame.columnconfigure(0, weight=1)
+
+    # Global channel data storage
+    ch_data = {"Ch1": None, "Ch2": None}
 
     # ----------------------------------------------------
     # Top Tab Navigation Bar
@@ -70,7 +203,7 @@ def build_review_ui(parent_frame, app=None):
     status_lbl.pack(side="left", padx=5)
 
     # ----------------------------------------------------
-    # Main Review Content Area
+    # Main Content Area
     # ----------------------------------------------------
     content_frame = tk.Frame(parent_frame, bg=bg_color)
     content_frame.grid(row=1, column=0, sticky="nsew", padx=15, pady=10)
@@ -107,8 +240,8 @@ def build_review_ui(parent_frame, app=None):
     # ----------------------------------------------------
     main_split = tk.Frame(content_frame, bg=bg_color)
     main_split.grid(row=1, column=0, sticky="nsew")
-    main_split.columnconfigure(0, weight=1)  # Plots area
-    main_split.columnconfigure(1, weight=0)  # Sidebar
+    main_split.columnconfigure(0, weight=1)
+    main_split.columnconfigure(1, weight=0)
     main_split.rowconfigure(0, weight=1)
 
     # Left Container (Sub-tabs + Plots)
@@ -141,57 +274,105 @@ def build_review_ui(parent_frame, app=None):
     # Embedded Matplotlib Figure
     fig = Figure(figsize=(7, 5), facecolor="#c8cee0")
     canvas = FigureCanvasTkAgg(fig, master=plot_frame)
-    canvas.get_tk_widget().pack(fill="both", expand=True)
+
+    # Create bottom container for standard Matplotlib Navigation Toolbar
+    toolbar_container = tk.Frame(plot_frame, bg="#c8cee0")
+    toolbar_container.pack(side="bottom", fill="x")
+    nav_toolbar = ReviewNavToolbar(canvas, toolbar_container)
+    nav_toolbar.pack(side="left")
+
+    canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
+
+    # Helper function to plot a channel waveform with exact markings from impulse_calculator.py
+    def render_channel_plot(ax, d, title_text="Channel"):
+        ax.clear()
+        ax.set_facecolor("#dce2ee")
+        ax.grid(True, color="#a0a8b8", linestyle="-", linewidth=0.7)
+        ax.set_ylabel("Voltage [kV]", fontsize=9, fontweight="bold")
+        ax.set_xlabel("Time [s]", fontsize=9, fontweight="bold")
+        ax.tick_params(labelsize=8)
+
+        if not d:
+            ax.set_title(f"{title_text} - No Data Loaded", fontsize=10, fontweight="bold")
+            return
+
+        time_s = d['time_us'] * 1e-6
+        ax.plot(time_s, d['raw_v'], label='Raw Waveform', color='#1e3a8a', linewidth=1.2)
+
+        # Plot 30%, 50%, 90% markers and time annotations if front calculation succeeded
+        if d['t1_us'] is not None:
+            v_p = d['v_peak']
+            sign = 1 if v_p >= 0 else -1
+
+            markers = [
+                (d['t30_us'] * 1e-6 if d['t30_us'] else None, d['v30'], '30%', 'purple'),
+                (d['t50_us'] * 1e-6 if d['t50_us'] else None, d['v50'], '50%', 'blue'),
+                (d['t90_us'] * 1e-6 if d['t90_us'] else None, d['v90'], '90%', 'green')
+            ]
+
+            for t_val, v_val, label, color in markers:
+                if t_val is not None:
+                    ax.hlines(v_val, 0, t_val, color=color, linestyle=':', alpha=0.6)
+                    ax.vlines(t_val, 0, v_val, color=color, linestyle=':', alpha=0.6)
+                    ax.plot(t_val, v_val, marker='o', color=color, markersize=4)
+                    ax.text(t_val, v_val, f' {label}', va='center', color=color, fontsize=8, fontweight="bold")
+
+            # Virtual origin O1
+            o1_s = d['o1_us'] * 1e-6 if d['o1_us'] else 0
+            t1_s = d['t1_us'] * 1e-6 if d['t1_us'] else 0
+
+            ax.plot(o1_s, 0, marker='o', color='black', markersize=4)
+            ax.vlines(o1_s, 0, v_p * 0.15, color='black', linestyle='--', alpha=0.6)
+
+            y_t1 = v_p * 0.05
+            ax.vlines(o1_s + t1_s, 0, y_t1, color='purple', linestyle=':', alpha=0.6)
+            ax.annotate(
+                '', xy=(o1_s, y_t1), xytext=(o1_s + t1_s, y_t1),
+                arrowprops=dict(arrowstyle='<->', color='purple', lw=1.2)
+            )
+            ax.text(o1_s + (t1_s / 2), y_t1, f" T1 = {d['t1_us']:.2f} µs ",
+                    ha='center', va='bottom' if sign > 0 else 'top', color='purple', fontsize=8,
+                    bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, pad=1))
+
+            if d['t2_us']:
+                t2_s = d['t2_us'] * 1e-6
+                y_t2 = v_p * 0.12
+                ax.vlines(o1_s + t2_s, 0, y_t2, color='blue', linestyle=':', alpha=0.6)
+                ax.annotate(
+                    '', xy=(o1_s, y_t2), xytext=(o1_s + t2_s, y_t2),
+                    arrowprops=dict(arrowstyle='<->', color='blue', lw=1.2)
+                )
+
+                is_chopped = (d['t2_us'] < 15.0)
+                t2_plot_label = "Tc" if is_chopped else "T2"
+
+                ax.text(o1_s + (t2_s / 2), y_t2, f" {t2_plot_label} = {d['t2_us']:.1f} µs ",
+                        ha='center', va='bottom' if sign > 0 else 'top', color='blue', fontsize=8,
+                        bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, pad=1))
+
+        ax.set_title(f"{title_text} - IEC 60060-1 Waveform", fontsize=10, fontweight="bold")
+        ax.legend(loc="upper right", fontsize=8)
 
     def draw_plots(mode="Channel 1&2"):
         fig.clear()
-        
+
         if mode == "Channel 1&2":
             ax1 = fig.add_subplot(211)
             ax2 = fig.add_subplot(212)
-            
-            # Top Plot Ch1
-            ax1.set_facecolor("#dce2ee")
-            ax1.grid(True, color="#a0a8b8", linestyle="-", linewidth=0.7)
-            ax1.set_ylabel("Voltage [kV]", fontsize=9, fontweight="bold")
-            ax1.set_xlabel("Time [s]", fontsize=9, fontweight="bold")
-            ax1.tick_params(labelsize=8)
-            ax1.set_xlim(0, 200)
-            ax1.set_ylim(-110, 10)
-            
-            # Bottom Plot Ch2
-            ax2.set_facecolor("#dce2ee")
-            ax2.grid(True, color="#a0a8b8", linestyle="-", linewidth=0.7)
-            ax2.set_ylabel("Voltage [kV]", fontsize=9, fontweight="bold")
-            ax2.set_xlabel("Time [s]", fontsize=9, fontweight="bold")
-            ax2.tick_params(labelsize=8)
-            ax2.set_xlim(0, 100)
-            ax2.set_ylim(-90, 1200)
+            render_channel_plot(ax1, ch_data["Ch1"], "Channel 1")
+            render_channel_plot(ax2, ch_data["Ch2"], "Channel 2")
 
         elif mode == "Channel 1":
             ax1 = fig.add_subplot(111)
-            ax1.set_facecolor("#dce2ee")
-            ax1.grid(True, color="#a0a8b8", linestyle="-", linewidth=0.7)
-            ax1.set_ylabel("Voltage [kV]", fontsize=9, fontweight="bold")
-            ax1.set_xlabel("Time [s]", fontsize=9, fontweight="bold")
-            ax1.tick_params(labelsize=8)
-            ax1.set_xlim(0, 200)
-            ax1.set_ylim(-110, 10)
-            ax1.set_title("Review - Channel 1", fontsize=10, fontweight="bold")
+            render_channel_plot(ax1, ch_data["Ch1"], "Channel 1")
 
         elif mode == "Channel 2":
             ax2 = fig.add_subplot(111)
-            ax2.set_facecolor("#dce2ee")
-            ax2.grid(True, color="#a0a8b8", linestyle="-", linewidth=0.7)
-            ax2.set_ylabel("Voltage [kV]", fontsize=9, fontweight="bold")
-            ax2.set_xlabel("Time [s]", fontsize=9, fontweight="bold")
-            ax2.tick_params(labelsize=8)
-            ax2.set_xlim(0, 100)
-            ax2.set_ylim(-90, 1200)
-            ax2.set_title("Review - Channel 2", fontsize=10, fontweight="bold")
+            render_channel_plot(ax2, ch_data["Ch2"], "Channel 2")
 
         fig.tight_layout()
         canvas.draw()
+        nav_toolbar.update()
 
     def set_subtab(selected_mode):
         active_subtab.set(selected_mode)
@@ -210,35 +391,182 @@ def build_review_ui(parent_frame, app=None):
     set_subtab("Channel 1&2")
 
     # ----------------------------------------------------
+    # Action Functions (Load, Parameters, Remove, Pan, Export)
+    # ----------------------------------------------------
+    def load_channel_file(ch_key):
+        file_path = filedialog.askopenfilename(
+            title=f"Select Waveform Data for {ch_key}",
+            filetypes=[("Data files", "*.txt *.csv *.dat"), ("All files", "*.*")]
+        )
+        if not file_path:
+            return
+
+        try:
+            raw_data = np.loadtxt(file_path)
+            time_arr = raw_data[:, 0]
+            volt_arr = raw_data[:, 1]
+
+            calc_res = calculate_iec_parameters(time_arr, volt_arr)
+            ch_data[ch_key] = calc_res
+            draw_plots(active_subtab.get())
+            messagebox.showinfo("Success", f"Successfully loaded and calculated IEC parameters for {ch_key}!")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to parse and calculate waveform data:\n{e}")
+
+    def show_parameters_dialog(ch_key):
+        d = ch_data[ch_key]
+        if not d:
+            messagebox.showwarning("No Data", f"No waveform data loaded for {ch_key}. Please click 'Load...' first.")
+            return
+
+        param_win = tk.Toplevel(parent_frame)
+        param_win.title(f"IEC 60060-1 Parameters - {ch_key}")
+        param_win.geometry("520x450")
+        param_win.configure(bg="#2b2b2b")
+        param_win.grab_set()
+
+        # Custom Styling
+        style = ttk.Style(param_win)
+        style.configure("Review.Treeview", font=('Segoe UI', 10), rowheight=26)
+        style.configure("Review.Treeview.Heading", font=('Segoe UI', 10, 'bold'))
+
+        # Header
+        tk.Label(param_win, text=f"Calculated IEC Parameters ({ch_key})", bg="#2b2b2b", fg="#facc15",
+                 font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=15, pady=(15, 5))
+
+        # Parameters Table
+        tree_params = ttk.Treeview(param_win, columns=("Parameter", "Value"), show="headings", height=7, style="Review.Treeview")
+        tree_params.heading("Parameter", text="Parameter")
+        tree_params.heading("Value", text="Value")
+        tree_params.column("Parameter", width=260)
+        tree_params.column("Value", width=180, anchor="e")
+        tree_params.pack(fill="x", padx=15, pady=(0, 15))
+
+        is_chopped = bool(d['t2_us'] and d['t2_us'] < 15.0)
+        vp_val = d['v_peak']
+        vp_str = f"{vp_val:.1f} V" if abs(vp_val) > 100 else f"{vp_val:.2f} V"
+
+        tree_params.insert("", tk.END, values=("Peak Voltage (Vp)", vp_str))
+        if d['t1_us']: tree_params.insert("", tk.END, values=("Front Time (T1)", f"{d['t1_us']:.2f} µs"))
+        
+        t2_label = "Chopping Time (Tc)" if is_chopped else "Half-value Time (T2)"
+        if d['t2_us']: tree_params.insert("", tk.END, values=(t2_label, f"{d['t2_us']:.1f} µs"))
+        if d['o1_us']: tree_params.insert("", tk.END, values=("Virtual Origin (O1)", f"{d['o1_us']:.3f} µs"))
+        
+        tree_params.insert("", tk.END, values=("Overshoot (β)", f"{d.get('beta_pct', 0):.2f} %"))
+        tree_params.insert("", tk.END, values=("Oscillation Freq (f)", f"{d.get('osc_freq_mhz', 0):.2f} MHz"))
+
+        # Tolerance Table Header
+        tk.Label(param_win, text="IEC 60060-1 Tolerance Verification", bg="#2b2b2b", fg="white",
+                 font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=15, pady=(5, 5))
+
+        tree_tol = ttk.Treeview(param_win, columns=("Param", "Nominal", "Tol", "Measured", "Pass"), show="headings", height=3, style="Review.Treeview")
+        for col in ["Param", "Nominal", "Tol", "Measured", "Pass"]:
+            tree_tol.heading(col, text=col)
+        
+        tree_tol.column("Param", width=70)
+        tree_tol.column("Nominal", width=90, anchor="e")
+        tree_tol.column("Tol", width=80, anchor="center")
+        tree_tol.column("Measured", width=100, anchor="e")
+        tree_tol.column("Pass", width=80, anchor="center")
+        tree_tol.pack(fill="x", padx=15, pady=(0, 15))
+
+        if d['t1_us']:
+            is_pass = "PASS" if 0.84 <= d['t1_us'] <= 1.56 else "FAIL"
+            tree_tol.insert("", tk.END, values=("T1", "1.20 µs", "± 30%", f"{d['t1_us']:.2f} µs", is_pass))
+
+        if d['t2_us']:
+            if not is_chopped:
+                is_pass2 = "PASS" if 40.0 <= d['t2_us'] <= 60.0 else "FAIL"
+                tree_tol.insert("", tk.END, values=("T2", "50.00 µs", "± 20%", f"{d['t2_us']:.1f} µs", is_pass2))
+            else:
+                tree_tol.insert("", tk.END, values=("Tc", "2-5 µs", "varies", f"{d['t2_us']:.1f} µs", "N/A"))
+
+        # Close button
+        tk.Button(param_win, text="Close", bg="#e53935", fg="white", font=("Segoe UI", 10, "bold"),
+                  command=param_win.destroy, width=10).pack(pady=10)
+
+    def remove_channel_wave(ch_key):
+        ch_data[ch_key] = None
+        draw_plots(active_subtab.get())
+        messagebox.showinfo("Removed", f"Cleared waveform data for {ch_key}.")
+
+    def pan_axes(direction):
+        axes_list = fig.get_axes()
+        if not axes_list: return
+        for ax in axes_list:
+            x_min, x_max = ax.get_xlim()
+            y_min, y_max = ax.get_ylim()
+            dx = (x_max - x_min) * 0.15
+            dy = (y_max - y_min) * 0.15
+            if direction == 'left': ax.set_xlim(x_min - dx, x_max - dx)
+            elif direction == 'right': ax.set_xlim(x_min + dx, x_max + dx)
+            elif direction == 'up': ax.set_ylim(y_min + dy, y_max + dy)
+            elif direction == 'down': ax.set_ylim(y_min - dy, y_max - dy)
+        canvas.draw_idle()
+
+    def export_data():
+        if not ch_data["Ch1"] and not ch_data["Ch2"]:
+            messagebox.showwarning("No Data", "No waveform data loaded to export.")
+            return
+
+        save_path = filedialog.asksaveasfilename(
+            title="Export Review Parameters",
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv"), ("Text files", "*.txt")]
+        )
+        if not save_path: return
+
+        try:
+            with open(save_path, "w") as f:
+                f.write("Channel,Vp_V,T1_us,T2_us,O1_us,Beta_pct,OscFreq_MHz\n")
+                for ch in ["Ch1", "Ch2"]:
+                    d = ch_data[ch]
+                    if d:
+                        f.write(f"{ch},{d['v_peak']:.2f},{d['t1_us'] or 0:.2f},{d['t2_us'] or 0:.2f},{d['o1_us'] or 0:.3f},{d.get('beta_pct',0):.2f},{d.get('osc_freq_mhz',0):.2f}\n")
+            messagebox.showinfo("Exported", f"Successfully exported review parameters to:\n{save_path}")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export data:\n{e}")
+
+    def save_all_as():
+        if not ch_data["Ch1"] and not ch_data["Ch2"]:
+            messagebox.showwarning("No Data", "No waveform data loaded to save.")
+            return
+
+        save_path = filedialog.asksaveasfilename(
+            title="Save Plot Image",
+            defaultextension=".png",
+            filetypes=[("PNG Image", "*.png"), ("PDF Document", "*.pdf")]
+        )
+        if save_path:
+            fig.savefig(save_path)
+            messagebox.showinfo("Saved", f"Successfully saved plot image to:\n{save_path}")
+
+    # ----------------------------------------------------
     # Right Control Sidebar (Review Ch1 & Review Ch2 controls)
     # ----------------------------------------------------
     sidebar = tk.Frame(main_split, bg="#8c97a8", bd=2, relief="groove", padx=10, pady=8)
     sidebar.grid(row=0, column=1, sticky="ns")
     sidebar.columnconfigure(0, weight=1)
 
-    # Button click handler placeholder
-    def on_btn_click(btn_name):
-        print(f"Review Tab Action: {btn_name}")
-
-    # Helper function to create styled sidebar buttons
-    def make_btn(parent, text, bg_color, fg_color="black"):
-        btn = tk.Button(parent, text=text, bg=bg_color, fg=fg_color,
-                        font=("Segoe UI", 9, "bold"), relief="raised", bd=2,
-                        cursor="hand2", width=18, pady=2,
-                        command=lambda t=text: on_btn_click(t))
-        btn.pack(fill="x", pady=3)
-        return btn
-
     # Helper function to create mini toolbars under Ch1 / Ch2
     def make_mini_toolbar(parent):
         tb_frame = tk.Frame(parent, bg="#8c97a8")
         tb_frame.pack(fill="x", pady=(2, 6))
-        
-        icons = ["+", "🔍", "⌂", "X", "Y", "MK"]
-        for icon in icons:
+
+        tool_defs = [
+            ("⌂", lambda: nav_toolbar.home()),
+            ("◀", lambda: pan_axes('left')),
+            ("▶", lambda: pan_axes('right')),
+            ("▲", lambda: pan_axes('up')),
+            ("▼", lambda: pan_axes('down')),
+            ("🔍", lambda: nav_toolbar.zoom()),
+            ("💾", lambda: nav_toolbar.save_figure())
+        ]
+        for icon, cmd in tool_defs:
             b = tk.Button(tb_frame, text=icon, bg="#d1d5db", fg="black",
-                          font=("Segoe UI", 8, "bold"), width=3, relief="raised", bd=1,
-                          command=lambda i=icon: on_btn_click(f"Tool {i}"))
+                          font=("Segoe UI", 8, "bold"), width=2, relief="raised", bd=1,
+                          command=cmd)
             b.pack(side="left", padx=1)
 
     # --- SECTION 1: Review Ch1 ---
@@ -248,9 +576,14 @@ def build_review_ui(parent_frame, app=None):
     tk.Label(ch1_sec, text="Review Ch1", bg="#8c97a8", fg="#facc15",
              font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 4))
 
-    make_btn(ch1_sec, "Load...", bg_color="#facc15", fg_color="black")
-    make_btn(ch1_sec, "Remove Wave", bg_color="#f97316", fg_color="black")
-    make_btn(ch1_sec, "Parameters", bg_color="#881337", fg_color="white")
+    tk.Button(ch1_sec, text="Load...", bg="#facc15", fg="black", font=("Segoe UI", 9, "bold"),
+              relief="raised", bd=2, width=18, pady=2, command=lambda: load_channel_file("Ch1")).pack(fill="x", pady=3)
+
+    tk.Button(ch1_sec, text="Remove Wave", bg="#f97316", fg="black", font=("Segoe UI", 9, "bold"),
+              relief="raised", bd=2, width=18, pady=2, command=lambda: remove_channel_wave("Ch1")).pack(fill="x", pady=3)
+
+    tk.Button(ch1_sec, text="Parameters", bg="#881337", fg="white", font=("Segoe UI", 9, "bold"),
+              relief="raised", bd=2, width=18, pady=2, command=lambda: show_parameters_dialog("Ch1")).pack(fill="x", pady=3)
 
     make_mini_toolbar(ch1_sec)
 
@@ -264,11 +597,9 @@ def build_review_ui(parent_frame, app=None):
     tk.Label(active_wave_frame, text="Active Wave", bg="#8c97a8", fg="#1e293b",
              font=("Segoe UI", 9, "bold")).pack(side="left", padx=(0, 5))
 
-    # Blue indicator box
     blue_box = tk.Label(active_wave_frame, bg="#0000ff", width=2, height=1, relief="solid", bd=1)
     blue_box.pack(side="left", padx=(0, 5))
 
-    # Spinbox / Entry for Wave Number
     spin_wave = tk.Spinbox(active_wave_frame, from_=1, to=99, width=4, font=("Segoe UI", 9, "bold"), justify="center")
     spin_wave.pack(side="left")
 
@@ -282,11 +613,23 @@ def build_review_ui(parent_frame, app=None):
     tk.Label(ch2_sec, text="Review Ch2", bg="#8c97a8", fg="#2563eb",
              font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 4))
 
-    make_btn(ch2_sec, "Load...", bg_color="#facc15", fg_color="black")
-    make_btn(ch2_sec, "Remove Wave", bg_color="#f97316", fg_color="black")
-    make_btn(ch2_sec, "Parameters", bg_color="#881337", fg_color="white")
-    make_btn(ch2_sec, "Save All as...", bg_color="#2563eb", fg_color="white")
-    make_btn(ch2_sec, "Export", bg_color="#facc15", fg_color="black")
-    make_btn(ch2_sec, "Print", bg_color="#60a5fa", fg_color="black")
+    tk.Button(ch2_sec, text="Load...", bg="#facc15", fg="black", font=("Segoe UI", 9, "bold"),
+              relief="raised", bd=2, width=18, pady=2, command=lambda: load_channel_file("Ch2")).pack(fill="x", pady=3)
+
+    tk.Button(ch2_sec, text="Remove Wave", bg="#f97316", fg="black", font=("Segoe UI", 9, "bold"),
+              relief="raised", bd=2, width=18, pady=2, command=lambda: remove_channel_wave("Ch2")).pack(fill="x", pady=3)
+
+    tk.Button(ch2_sec, text="Parameters", bg="#881337", fg="white", font=("Segoe UI", 9, "bold"),
+              relief="raised", bd=2, width=18, pady=2, command=lambda: show_parameters_dialog("Ch2")).pack(fill="x", pady=3)
+
+    tk.Button(ch2_sec, text="Save All as...", bg="#2563eb", fg="white", font=("Segoe UI", 9, "bold"),
+              relief="raised", bd=2, width=18, pady=2, command=save_all_as).pack(fill="x", pady=3)
+
+    tk.Button(ch2_sec, text="Export", bg="#facc15", fg="black", font=("Segoe UI", 9, "bold"),
+              relief="raised", bd=2, width=18, pady=2, command=export_data).pack(fill="x", pady=3)
+
+    tk.Button(ch2_sec, text="Print", bg="#60a5fa", fg="black", font=("Segoe UI", 9, "bold"),
+              relief="raised", bd=2, width=18, pady=2, command=save_all_as).pack(fill="x", pady=3)
 
     make_mini_toolbar(ch2_sec)
+
