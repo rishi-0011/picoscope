@@ -540,6 +540,11 @@ def update_status(parent_frame, is_connected):
         except: pass
 
 def show_empty_tab_page(parent_frame, app, active_tab):
+    if active_tab == "Review":
+        import review
+        review.build_review_ui(parent_frame, app)
+        return
+
     for widget in parent_frame.winfo_children():
         widget.destroy()
 
