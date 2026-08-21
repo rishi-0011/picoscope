@@ -6,6 +6,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolb
 from matplotlib.figure import Figure
 import numpy as np
 import os
+import pathlib
 from scipy.optimize import curve_fit
 from scipy.signal import find_peaks
 
@@ -75,7 +76,7 @@ def calculate_iec_parameters(time, raw_voltage):
         tail_start = tp + 4 * T1
         mask_fit = ((t >= O1) & (t < t90)) | (t > tail_start)
         if mask_fit.sum() < 5:
-            mask_fit = t >= O1  # fallback
+            mask_fit = t >= O1
 
         A0 = Vext * 1.3
         alpha0 = np.log(2) / max(T2, 1e-9)
@@ -130,10 +131,53 @@ def calculate_iec_parameters(time, raw_voltage):
     }
 
 # ----------------------------------------------------------------------
-# SMART NAVIGATION TOOLBAR (Matching impulse_calculator.py)
+# SMART NAVIGATION TOOLBAR WITH NATIVE CUSTOM PAN ARROWS
 # ----------------------------------------------------------------------
-class ReviewNavToolbar(NavigationToolbar2Tk):
+class SmartReviewNavToolbar(NavigationToolbar2Tk):
     toolitems = [t for t in NavigationToolbar2Tk.toolitems if t[0] not in ('Back', 'Forward')]
+
+    def __init__(self, canvas, window, pan_callback=None):
+        super().__init__(canvas, window)
+        self.pan_callback = pan_callback
+        self._inject_custom_arrows()
+
+    def _inject_custom_arrows(self):
+        try:
+            import matplotlib.cbook as cbook
+            original_get_data_path = cbook._get_data_path
+
+            def hooked_get_data_path(path_type, *args, **kwargs):
+                if path_type == 'images' and args:
+                    img_name = args[0]
+                    local_images = ['left.png', 'right.png', 'up.png', 'down.png',
+                                    'left_large.png', 'right_large.png', 'up_large.png', 'down_large.png']
+                    if img_name in local_images:
+                        base_dir = pathlib.Path(os.path.dirname(__file__)) / 'images'
+                        return (base_dir / img_name).absolute()
+                return original_get_data_path(path_type, *args, **kwargs)
+
+            cbook._get_data_path = hooked_get_data_path
+
+            btn_left = self._Button('Pan Left', 'left.png', False, lambda: self._do_pan('left'))
+            btn_right = self._Button('Pan Right', 'right.png', False, lambda: self._do_pan('right'))
+            btn_up = self._Button('Pan Up', 'up.png', False, lambda: self._do_pan('up'))
+            btn_down = self._Button('Pan Down', 'down.png', False, lambda: self._do_pan('down'))
+
+            children = self.pack_slaves()
+            my_btns = children[-4:]
+            insert_before = children[1] if len(children) > 5 else None
+
+            if insert_before:
+                for b in my_btns:
+                    b.pack(side=tk.LEFT, before=insert_before)
+
+            cbook._get_data_path = original_get_data_path
+        except Exception as e:
+            print("Could not load native pan icons in review toolbar:", e)
+
+    def _do_pan(self, direction):
+        if self.pan_callback:
+            self.pan_callback(direction)
 
 # ----------------------------------------------------------------------
 # REVIEW TAB UI BUILDER
@@ -148,7 +192,6 @@ def build_review_ui(parent_frame, app=None):
     parent_frame.rowconfigure(1, weight=1)
     parent_frame.columnconfigure(0, weight=1)
 
-    # Global channel data storage
     ch_data = {"Ch1": None, "Ch2": None}
 
     # ----------------------------------------------------
@@ -274,16 +317,9 @@ def build_review_ui(parent_frame, app=None):
     # Embedded Matplotlib Figure
     fig = Figure(figsize=(7, 5), facecolor="#c8cee0")
     canvas = FigureCanvasTkAgg(fig, master=plot_frame)
+    canvas.get_tk_widget().pack(fill="both", expand=True)
 
-    # Create bottom container for standard Matplotlib Navigation Toolbar
-    toolbar_container = tk.Frame(plot_frame, bg="#c8cee0")
-    toolbar_container.pack(side="bottom", fill="x")
-    nav_toolbar = ReviewNavToolbar(canvas, toolbar_container)
-    nav_toolbar.pack(side="left")
-
-    canvas.get_tk_widget().pack(side="top", fill="both", expand=True)
-
-    # Helper function to plot a channel waveform with exact markings from impulse_calculator.py
+    # Helper function to plot a channel waveform
     def render_channel_plot(ax, d, title_text="Channel"):
         ax.clear()
         ax.set_facecolor("#dce2ee")
@@ -299,7 +335,6 @@ def build_review_ui(parent_frame, app=None):
         time_s = d['time_us'] * 1e-6
         ax.plot(time_s, d['raw_v'], label='Raw Waveform', color='#1e3a8a', linewidth=1.2)
 
-        # Plot 30%, 50%, 90% markers and time annotations if front calculation succeeded
         if d['t1_us'] is not None:
             v_p = d['v_peak']
             sign = 1 if v_p >= 0 else -1
@@ -317,7 +352,6 @@ def build_review_ui(parent_frame, app=None):
                     ax.plot(t_val, v_val, marker='o', color=color, markersize=4)
                     ax.text(t_val, v_val, f' {label}', va='center', color=color, fontsize=8, fontweight="bold")
 
-            # Virtual origin O1
             o1_s = d['o1_us'] * 1e-6 if d['o1_us'] else 0
             t1_s = d['t1_us'] * 1e-6 if d['t1_us'] else 0
 
@@ -372,7 +406,8 @@ def build_review_ui(parent_frame, app=None):
 
         fig.tight_layout()
         canvas.draw()
-        nav_toolbar.update()
+        if hasattr(app, 'tb_ch1') and app.tb_ch1: app.tb_ch1.update()
+        if hasattr(app, 'tb_ch2') and app.tb_ch2: app.tb_ch2.update()
 
     def set_subtab(selected_mode):
         active_subtab.set(selected_mode)
@@ -387,11 +422,8 @@ def build_review_ui(parent_frame, app=None):
     btn_ch1.config(command=lambda: set_subtab("Channel 1"))
     btn_ch2.config(command=lambda: set_subtab("Channel 2"))
 
-    # Initial plot rendering
-    set_subtab("Channel 1&2")
-
     # ----------------------------------------------------
-    # Action Functions (Load, Parameters, Remove, Pan, Export)
+    # Action Functions
     # ----------------------------------------------------
     def load_channel_file(ch_key):
         file_path = filedialog.askopenfilename(
@@ -425,16 +457,13 @@ def build_review_ui(parent_frame, app=None):
         param_win.configure(bg="#2b2b2b")
         param_win.grab_set()
 
-        # Custom Styling
         style = ttk.Style(param_win)
         style.configure("Review.Treeview", font=('Segoe UI', 10), rowheight=26)
         style.configure("Review.Treeview.Heading", font=('Segoe UI', 10, 'bold'))
 
-        # Header
         tk.Label(param_win, text=f"Calculated IEC Parameters ({ch_key})", bg="#2b2b2b", fg="#facc15",
                  font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=15, pady=(15, 5))
 
-        # Parameters Table
         tree_params = ttk.Treeview(param_win, columns=("Parameter", "Value"), show="headings", height=7, style="Review.Treeview")
         tree_params.heading("Parameter", text="Parameter")
         tree_params.heading("Value", text="Value")
@@ -456,7 +485,6 @@ def build_review_ui(parent_frame, app=None):
         tree_params.insert("", tk.END, values=("Overshoot (β)", f"{d.get('beta_pct', 0):.2f} %"))
         tree_params.insert("", tk.END, values=("Oscillation Freq (f)", f"{d.get('osc_freq_mhz', 0):.2f} MHz"))
 
-        # Tolerance Table Header
         tk.Label(param_win, text="IEC 60060-1 Tolerance Verification", bg="#2b2b2b", fg="white",
                  font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=15, pady=(5, 5))
 
@@ -482,7 +510,6 @@ def build_review_ui(parent_frame, app=None):
             else:
                 tree_tol.insert("", tk.END, values=("Tc", "2-5 µs", "varies", f"{d['t2_us']:.1f} µs", "N/A"))
 
-        # Close button
         tk.Button(param_win, text="Close", bg="#e53935", fg="white", font=("Segoe UI", 10, "bold"),
                   command=param_win.destroy, width=10).pack(pady=10)
 
@@ -491,18 +518,19 @@ def build_review_ui(parent_frame, app=None):
         draw_plots(active_subtab.get())
         messagebox.showinfo("Removed", f"Cleared waveform data for {ch_key}.")
 
-    def pan_axes(direction):
+    def pan_plot_channel(direction, target_ch="Ch1"):
         axes_list = fig.get_axes()
         if not axes_list: return
-        for ax in axes_list:
-            x_min, x_max = ax.get_xlim()
-            y_min, y_max = ax.get_ylim()
-            dx = (x_max - x_min) * 0.15
-            dy = (y_max - y_min) * 0.15
-            if direction == 'left': ax.set_xlim(x_min - dx, x_max - dx)
-            elif direction == 'right': ax.set_xlim(x_min + dx, x_max + dx)
-            elif direction == 'up': ax.set_ylim(y_min + dy, y_max + dy)
-            elif direction == 'down': ax.set_ylim(y_min - dy, y_max - dy)
+        ax = axes_list[0] if (target_ch == "Ch1" or len(axes_list) == 1) else axes_list[1]
+        
+        x_min, x_max = ax.get_xlim()
+        y_min, y_max = ax.get_ylim()
+        dx = (x_max - x_min) * 0.15
+        dy = (y_max - y_min) * 0.15
+        if direction == 'left': ax.set_xlim(x_min - dx, x_max - dx)
+        elif direction == 'right': ax.set_xlim(x_min + dx, x_max + dx)
+        elif direction == 'up': ax.set_ylim(y_min + dy, y_max + dy)
+        elif direction == 'down': ax.set_ylim(y_min - dy, y_max - dy)
         canvas.draw_idle()
 
     def export_data():
@@ -549,26 +577,6 @@ def build_review_ui(parent_frame, app=None):
     sidebar.grid(row=0, column=1, sticky="ns")
     sidebar.columnconfigure(0, weight=1)
 
-    # Helper function to create mini toolbars under Ch1 / Ch2
-    def make_mini_toolbar(parent):
-        tb_frame = tk.Frame(parent, bg="#8c97a8")
-        tb_frame.pack(fill="x", pady=(2, 6))
-
-        tool_defs = [
-            ("⌂", lambda: nav_toolbar.home()),
-            ("◀", lambda: pan_axes('left')),
-            ("▶", lambda: pan_axes('right')),
-            ("▲", lambda: pan_axes('up')),
-            ("▼", lambda: pan_axes('down')),
-            ("🔍", lambda: nav_toolbar.zoom()),
-            ("💾", lambda: nav_toolbar.save_figure())
-        ]
-        for icon, cmd in tool_defs:
-            b = tk.Button(tb_frame, text=icon, bg="#d1d5db", fg="black",
-                          font=("Segoe UI", 8, "bold"), width=2, relief="raised", bd=1,
-                          command=cmd)
-            b.pack(side="left", padx=1)
-
     # --- SECTION 1: Review Ch1 ---
     ch1_sec = tk.Frame(sidebar, bg="#8c97a8")
     ch1_sec.pack(fill="x", pady=(0, 5))
@@ -585,7 +593,11 @@ def build_review_ui(parent_frame, app=None):
     tk.Button(ch1_sec, text="Parameters", bg="#881337", fg="white", font=("Segoe UI", 9, "bold"),
               relief="raised", bd=2, width=18, pady=2, command=lambda: show_parameters_dialog("Ch1")).pack(fill="x", pady=3)
 
-    make_mini_toolbar(ch1_sec)
+    # Put Native Matplotlib Navigation Toolbar (with Pan Arrows, Zoom, Home, Save) under Parameters for Ch1
+    tb_ch1_frame = tk.Frame(ch1_sec, bg="#8c97a8")
+    tb_ch1_frame.pack(fill="x", pady=(4, 6))
+    app.tb_ch1 = SmartReviewNavToolbar(canvas, tb_ch1_frame, pan_callback=lambda d: pan_plot_channel(d, "Ch1"))
+    app.tb_ch1.pack(side="left")
 
     # Separator
     ttk.Separator(sidebar, orient="horizontal").pack(fill="x", pady=6)
@@ -631,5 +643,11 @@ def build_review_ui(parent_frame, app=None):
     tk.Button(ch2_sec, text="Print", bg="#60a5fa", fg="black", font=("Segoe UI", 9, "bold"),
               relief="raised", bd=2, width=18, pady=2, command=save_all_as).pack(fill="x", pady=3)
 
-    make_mini_toolbar(ch2_sec)
+    # Put Native Matplotlib Navigation Toolbar (with Pan Arrows, Zoom, Home, Save) under Parameters/Print for Ch2
+    tb_ch2_frame = tk.Frame(ch2_sec, bg="#8c97a8")
+    tb_ch2_frame.pack(fill="x", pady=(4, 6))
+    app.tb_ch2 = SmartReviewNavToolbar(canvas, tb_ch2_frame, pan_callback=lambda d: pan_plot_channel(d, "Ch2"))
+    app.tb_ch2.pack(side="left")
 
+    # Initial plot rendering
+    set_subtab("Channel 1&2")
