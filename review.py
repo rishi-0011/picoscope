@@ -210,19 +210,23 @@ class SmartReviewNavToolbar(NavigationToolbar2Tk):
             self.pan_callback(direction)
 
     def _make_compact(self):
-        for child in self.winfo_children():
-            if isinstance(child, (ttk.Separator, tk.Frame)):
-                try:
-                    if not child.winfo_children():
-                        child.pack_forget()
-                except Exception:
-                    pass
-            if isinstance(child, (tk.Button, ttk.Button)):
-                try:
-                    child.configure(padx=0, pady=0)
-                    child.pack_configure(padx=0, pady=0)
-                except Exception:
-                    pass
+        btns = [c for c in self.winfo_children() if isinstance(c, (tk.Button, ttk.Button))]
+        for c in list(self.winfo_children()):
+            try: c.pack_forget()
+            except: pass
+
+        row1 = tk.Frame(self, bg="#8c97a8")
+        row1.pack(side=tk.TOP, anchor="w", pady=1)
+        row2 = tk.Frame(self, bg="#8c97a8")
+        row2.pack(side=tk.TOP, anchor="w", pady=1)
+
+        for i, b in enumerate(btns):
+            target_row = row1 if i < 5 else row2
+            b.pack(in_=target_row, side=tk.LEFT, padx=0, pady=0)
+            try:
+                b.configure(padx=0, pady=0)
+            except Exception:
+                pass
 
 # ----------------------------------------------------------------------
 # REVIEW TAB UI BUILDER
