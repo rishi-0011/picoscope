@@ -197,9 +197,9 @@ class SmartReviewNavToolbar(NavigationToolbar2Tk):
             print("Could not load native pan icons in review toolbar:", e)
 
     def _add_mk_button(self):
-        btn_mk = tk.Button(self, text="MK", font=("Segoe UI", 8, "bold"), bg="#facc15", fg="black",
-                           width=3, relief="raised", bd=1, cursor="hand2", command=self._do_mk)
-        btn_mk.pack(side=tk.LEFT, padx=2)
+        btn_mk = tk.Button(self, text="MK", font=("Segoe UI", 7, "bold"), bg="#facc15", fg="black",
+                           width=2, relief="raised", bd=1, cursor="hand2", command=self._do_mk)
+        btn_mk.pack(side=tk.LEFT, padx=1)
 
     def _do_mk(self):
         if self.mk_callback:
@@ -210,10 +210,27 @@ class SmartReviewNavToolbar(NavigationToolbar2Tk):
             self.pan_callback(direction)
 
     def _make_compact(self):
-        for child in self.winfo_children():
-            if isinstance(child, (tk.Button, ttk.Button)):
+        from PIL import Image, ImageTk
+        self._small_images = []
+
+        for child in list(self.winfo_children()):
+            if isinstance(child, (ttk.Separator, tk.Frame)):
                 try:
-                    child.configure(padx=0, pady=0)
+                    if not child.winfo_children():
+                        child.pack_forget()
+                except Exception:
+                    pass
+            elif isinstance(child, (tk.Button, ttk.Button)):
+                try:
+                    child.configure(padx=0, pady=0, bd=1)
+                    child.pack_configure(padx=0, pady=0)
+                    img_name = child.cget("image")
+                    if img_name:
+                        py_img = ImageTk.getimage(img_name)
+                        py_img_resized = py_img.resize((15, 15), Image.Resampling.LANCZOS)
+                        photo = ImageTk.PhotoImage(py_img_resized)
+                        child.config(image=photo)
+                        self._small_images.append(photo)
                 except Exception:
                     pass
 
