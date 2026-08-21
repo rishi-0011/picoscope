@@ -136,10 +136,11 @@ def calculate_iec_parameters(time, raw_voltage):
 class SmartReviewNavToolbar(NavigationToolbar2Tk):
     toolitems = [t for t in NavigationToolbar2Tk.toolitems if t[0] not in ('Back', 'Forward')]
 
-    def __init__(self, canvas, window, pan_callback=None, mk_callback=None):
+    def __init__(self, canvas, window, pan_callback=None, mk_callback=None, home_callback=None):
         super().__init__(canvas, window)
         self.pan_callback = pan_callback
         self.mk_callback = mk_callback
+        self.home_callback = home_callback
         self._inject_custom_arrows()
         self._add_mk_button()
         self._make_compact()
@@ -153,6 +154,13 @@ class SmartReviewNavToolbar(NavigationToolbar2Tk):
 
     def set_message(self, s):
         pass
+
+    def home(self, *args):
+        super().home(*args)
+        if self.home_callback:
+            self.home_callback()
+        else:
+            self.canvas.draw_idle()
 
     def _inject_custom_arrows(self):
         try:
@@ -554,6 +562,11 @@ def build_review_ui(parent_frame, app=None):
         messagebox.showinfo("Removed", f"Cleared waveform data for {ch_key}.")
 
     def pan_plot_channel(direction, target_ch="Ch1"):
+        tb = getattr(app, 'tb_ch1', None) if target_ch == "Ch1" else getattr(app, 'tb_ch2', None)
+        if tb and hasattr(tb, 'push_current'):
+            try: tb.push_current()
+            except: pass
+
         axes_list = fig.get_axes()
         if not axes_list: return
         ax = axes_list[0] if (target_ch == "Ch1" or len(axes_list) == 1) else axes_list[1]
@@ -632,7 +645,8 @@ def build_review_ui(parent_frame, app=None):
     tb_ch1_frame = tk.Frame(ch1_sec, bg="#8c97a8")
     tb_ch1_frame.pack(fill="x", pady=(2, 4))
     app.tb_ch1 = SmartReviewNavToolbar(canvas, tb_ch1_frame, pan_callback=lambda d: pan_plot_channel(d, "Ch1"),
-                                       mk_callback=lambda: toggle_markers("Ch1"))
+                                       mk_callback=lambda: toggle_markers("Ch1"),
+                                       home_callback=lambda: draw_plots(active_subtab.get()))
     app.tb_ch1.pack(side="left")
 
     # Separator
@@ -683,7 +697,8 @@ def build_review_ui(parent_frame, app=None):
     tb_ch2_frame = tk.Frame(ch2_sec, bg="#8c97a8")
     tb_ch2_frame.pack(fill="x", pady=(2, 4))
     app.tb_ch2 = SmartReviewNavToolbar(canvas, tb_ch2_frame, pan_callback=lambda d: pan_plot_channel(d, "Ch2"),
-                                       mk_callback=lambda: toggle_markers("Ch2"))
+                                       mk_callback=lambda: toggle_markers("Ch2"),
+                                       home_callback=lambda: draw_plots(active_subtab.get()))
     app.tb_ch2.pack(side="left")
 
     # Initial plot rendering
