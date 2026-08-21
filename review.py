@@ -131,15 +131,19 @@ def calculate_iec_parameters(time, raw_voltage):
     }
 
 # ----------------------------------------------------------------------
-# SMART NAVIGATION TOOLBAR WITH NATIVE CUSTOM PAN ARROWS
+# SMART NAVIGATION TOOLBAR WITH NATIVE CUSTOM ARROWS & MK BUTTON
 # ----------------------------------------------------------------------
 class SmartReviewNavToolbar(NavigationToolbar2Tk):
     toolitems = [t for t in NavigationToolbar2Tk.toolitems if t[0] not in ('Back', 'Forward')]
 
-    def __init__(self, canvas, window, pan_callback=None):
+    def __init__(self, canvas, window, pan_callback=None, mk_callback=None):
         super().__init__(canvas, window)
         self.pan_callback = pan_callback
+        self.mk_callback = mk_callback
         self._inject_custom_arrows()
+        self._add_mk_button()
+        self._make_compact()
+
         if hasattr(self, 'message'):
             try: self.message.pack_forget()
             except: pass
@@ -184,9 +188,26 @@ class SmartReviewNavToolbar(NavigationToolbar2Tk):
         except Exception as e:
             print("Could not load native pan icons in review toolbar:", e)
 
+    def _add_mk_button(self):
+        btn_mk = tk.Button(self, text="MK", font=("Segoe UI", 8, "bold"), bg="#facc15", fg="black",
+                           width=3, relief="raised", bd=1, cursor="hand2", command=self._do_mk)
+        btn_mk.pack(side=tk.LEFT, padx=2)
+
+    def _do_mk(self):
+        if self.mk_callback:
+            self.mk_callback()
+
     def _do_pan(self, direction):
         if self.pan_callback:
             self.pan_callback(direction)
+
+    def _make_compact(self):
+        for child in self.winfo_children():
+            if isinstance(child, (tk.Button, ttk.Button)):
+                try:
+                    child.configure(padx=1, pady=1)
+                except Exception:
+                    pass
 
 # ----------------------------------------------------------------------
 # REVIEW TAB UI BUILDER
@@ -202,6 +223,7 @@ def build_review_ui(parent_frame, app=None):
     parent_frame.columnconfigure(0, weight=1)
 
     ch_data = {"Ch1": None, "Ch2": None}
+    show_markers = {"Ch1": True, "Ch2": True}
 
     # ----------------------------------------------------
     # Top Tab Navigation Bar
@@ -329,7 +351,7 @@ def build_review_ui(parent_frame, app=None):
     canvas.get_tk_widget().pack(fill="both", expand=True)
 
     # Helper function to plot a channel waveform
-    def render_channel_plot(ax, d, title_text="Channel"):
+    def render_channel_plot(ax, d, title_text="Channel", show_mk=True):
         ax.clear()
         ax.set_facecolor("#dce2ee")
         ax.grid(True, color="#a0a8b8", linestyle="-", linewidth=0.7)
@@ -344,7 +366,7 @@ def build_review_ui(parent_frame, app=None):
         time_s = d['time_us'] * 1e-6
         ax.plot(time_s, d['raw_v'], label='Raw Waveform', color='#1e3a8a', linewidth=1.2)
 
-        if d['t1_us'] is not None:
+        if show_mk and d['t1_us'] is not None:
             v_p = d['v_peak']
             sign = 1 if v_p >= 0 else -1
 
@@ -402,21 +424,25 @@ def build_review_ui(parent_frame, app=None):
         if mode == "Channel 1&2":
             ax1 = fig.add_subplot(211)
             ax2 = fig.add_subplot(212)
-            render_channel_plot(ax1, ch_data["Ch1"], "Channel 1")
-            render_channel_plot(ax2, ch_data["Ch2"], "Channel 2")
+            render_channel_plot(ax1, ch_data["Ch1"], "Channel 1", show_markers["Ch1"])
+            render_channel_plot(ax2, ch_data["Ch2"], "Channel 2", show_markers["Ch2"])
 
         elif mode == "Channel 1":
             ax1 = fig.add_subplot(111)
-            render_channel_plot(ax1, ch_data["Ch1"], "Channel 1")
+            render_channel_plot(ax1, ch_data["Ch1"], "Channel 1", show_markers["Ch1"])
 
         elif mode == "Channel 2":
             ax2 = fig.add_subplot(111)
-            render_channel_plot(ax2, ch_data["Ch2"], "Channel 2")
+            render_channel_plot(ax2, ch_data["Ch2"], "Channel 2", show_markers["Ch2"])
 
         fig.tight_layout()
         canvas.draw()
         if hasattr(app, 'tb_ch1') and app.tb_ch1: app.tb_ch1.update()
         if hasattr(app, 'tb_ch2') and app.tb_ch2: app.tb_ch2.update()
+
+    def toggle_markers(ch_key):
+        show_markers[ch_key] = not show_markers[ch_key]
+        draw_plots(active_subtab.get())
 
     def set_subtab(selected_mode):
         active_subtab.set(selected_mode)
@@ -602,10 +628,11 @@ def build_review_ui(parent_frame, app=None):
     tk.Button(ch1_sec, text="Parameters", bg="#881337", fg="white", font=("Segoe UI", 9, "bold"),
               relief="raised", bd=2, width=18, pady=2, command=lambda: show_parameters_dialog("Ch1")).pack(fill="x", pady=3)
 
-    # Put Native Matplotlib Navigation Toolbar (with Pan Arrows, Zoom, Home, Save) under Parameters for Ch1
+    # Compact Native Toolbar under Parameters for Ch1 (includes custom Pan Arrows + MK button)
     tb_ch1_frame = tk.Frame(ch1_sec, bg="#8c97a8")
-    tb_ch1_frame.pack(fill="x", pady=(4, 6))
-    app.tb_ch1 = SmartReviewNavToolbar(canvas, tb_ch1_frame, pan_callback=lambda d: pan_plot_channel(d, "Ch1"))
+    tb_ch1_frame.pack(fill="x", pady=(2, 4))
+    app.tb_ch1 = SmartReviewNavToolbar(canvas, tb_ch1_frame, pan_callback=lambda d: pan_plot_channel(d, "Ch1"),
+                                       mk_callback=lambda: toggle_markers("Ch1"))
     app.tb_ch1.pack(side="left")
 
     # Separator
@@ -652,11 +679,13 @@ def build_review_ui(parent_frame, app=None):
     tk.Button(ch2_sec, text="Print", bg="#60a5fa", fg="black", font=("Segoe UI", 9, "bold"),
               relief="raised", bd=2, width=18, pady=2, command=save_all_as).pack(fill="x", pady=3)
 
-    # Put Native Matplotlib Navigation Toolbar (with Pan Arrows, Zoom, Home, Save) under Parameters/Print for Ch2
+    # Compact Native Toolbar under Parameters/Print for Ch2 (includes custom Pan Arrows + MK button)
     tb_ch2_frame = tk.Frame(ch2_sec, bg="#8c97a8")
-    tb_ch2_frame.pack(fill="x", pady=(4, 6))
-    app.tb_ch2 = SmartReviewNavToolbar(canvas, tb_ch2_frame, pan_callback=lambda d: pan_plot_channel(d, "Ch2"))
+    tb_ch2_frame.pack(fill="x", pady=(2, 4))
+    app.tb_ch2 = SmartReviewNavToolbar(canvas, tb_ch2_frame, pan_callback=lambda d: pan_plot_channel(d, "Ch2"),
+                                       mk_callback=lambda: toggle_markers("Ch2"))
     app.tb_ch2.pack(side="left")
 
     # Initial plot rendering
     set_subtab("Channel 1&2")
+
