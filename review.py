@@ -140,6 +140,15 @@ class SmartReviewNavToolbar(NavigationToolbar2Tk):
         super().__init__(canvas, window)
         self.pan_callback = pan_callback
         self._inject_custom_arrows()
+        if hasattr(self, 'message'):
+            try: self.message.pack_forget()
+            except: pass
+        if hasattr(self, 'loc_label'):
+            try: self.loc_label.pack_forget()
+            except: pass
+
+    def set_message(self, s):
+        pass
 
     def _inject_custom_arrows(self):
         try:
