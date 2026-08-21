@@ -209,7 +209,7 @@ def analyze(t, v_raw):
         "base_peak": base_peak,
         "beta": beta_os,
         "beta_prime_pct": beta_prime,
-        "f_osc_MHz": f_osc * 1e-6 if not np.isnan(f_osc) else None,
+        "f_osc_kHz": f_osc * 1e-3 if not np.isnan(f_osc) else None,
     }, base, polarity
 
 
@@ -237,8 +237,8 @@ def print_report(r):
     print(f"  Base-curve peak, Upmc             : {r['base_peak']:.4f}")
     print(f"  Overshoot magnitude, beta         : {r['beta']:.4f}")
     print(f"  Relative overshoot, beta' (dash)  : {r['beta_prime_pct']:.2f} %")
-    if r["f_osc_MHz"] is not None:
-        print(f"  Crest oscillation frequency, f    : {r['f_osc_MHz']:.4f} MHz")
+    if r["f_osc_kHz"] is not None:
+        print(f"  Crest oscillation frequency, f    : {r['f_osc_kHz']:.2f} kHz")
     else:
         print(f"  Crest oscillation frequency, f    : not detected (smooth crest)")
     print("=" * 60)

@@ -334,7 +334,7 @@ class IECAnalyzerApp(tk.Tk):
             't2_us': T2 * 1e6 if T2 else None,
             'o1_us': O1 * 1e6 if O1 else None,
             'beta_pct': beta_prime,
-            'osc_freq_mhz': f_osc * 1e-6 if not np.isnan(f_osc) else 0
+            'osc_freq_khz': f_osc * 1e-3 if not np.isnan(f_osc) else 0
         }
 
         self.update_tables()
@@ -370,7 +370,7 @@ class IECAnalyzerApp(tk.Tk):
         
         self.tree_params.insert("", tk.END, values=("Overshoot β", f"{d.get('beta_pct', 0):.2f} %"))
         self.tree_params.insert("", tk.END, values=("β (K-filtered)", "N/A"))
-        self.tree_params.insert("", tk.END, values=("Osc. Freq (f)", f"{d.get('osc_freq_mhz', 0):.2f} MHz"))
+        self.tree_params.insert("", tk.END, values=("Osc. Freq (f)", f"{d.get('osc_freq_khz', 0):.2f} kHz"))
 
         if d['t1_us']:
             is_pass = "PASS" if 0.84 <= d['t1_us'] <= 1.56 else "FAIL"

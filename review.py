@@ -127,7 +127,7 @@ def calculate_iec_parameters(time, raw_voltage):
         't2_us': T2 * 1e6 if T2 else None,
         'o1_us': O1 * 1e6 if O1 else None,
         'beta_pct': beta_prime,
-        'osc_freq_mhz': f_osc * 1e-6 if not np.isnan(f_osc) else 0
+        'osc_freq_khz': f_osc * 1e-3 if not np.isnan(f_osc) else 0
     }
 
 # ----------------------------------------------------------------------
@@ -518,7 +518,7 @@ def build_review_ui(parent_frame, app=None):
         if d['o1_us']: tree_params.insert("", tk.END, values=("Virtual Origin (O1)", f"{d['o1_us']:.3f} µs"))
         
         tree_params.insert("", tk.END, values=("Overshoot (β)", f"{d.get('beta_pct', 0):.2f} %"))
-        tree_params.insert("", tk.END, values=("Oscillation Freq (f)", f"{d.get('osc_freq_mhz', 0):.2f} MHz"))
+        tree_params.insert("", tk.END, values=("Oscillation Freq (f)", f"{d.get('osc_freq_khz', 0):.2f} kHz"))
 
         tk.Label(param_win, text="IEC 60060-1 Tolerance Verification", bg="#2b2b2b", fg="white",
                  font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=15, pady=(5, 5))
@@ -582,11 +582,11 @@ def build_review_ui(parent_frame, app=None):
 
         try:
             with open(save_path, "w") as f:
-                f.write("Channel,Vp_V,T1_us,T2_us,O1_us,Beta_pct,OscFreq_MHz\n")
+                f.write("Channel,Vp_V,T1_us,T2_us,O1_us,Beta_pct,OscFreq_kHz\n")
                 for ch in ["Ch1", "Ch2"]:
                     d = ch_data[ch]
                     if d:
-                        f.write(f"{ch},{d['v_peak']:.2f},{d['t1_us'] or 0:.2f},{d['t2_us'] or 0:.2f},{d['o1_us'] or 0:.3f},{d.get('beta_pct',0):.2f},{d.get('osc_freq_mhz',0):.2f}\n")
+                        f.write(f"{ch},{d['v_peak']:.2f},{d['t1_us'] or 0:.2f},{d['t2_us'] or 0:.2f},{d['o1_us'] or 0:.3f},{d.get('beta_pct',0):.2f},{d.get('osc_freq_khz',0):.2f}\n")
             messagebox.showinfo("Exported", f"Successfully exported review parameters to:\n{save_path}")
         except Exception as e:
             messagebox.showerror("Error", f"Failed to export data:\n{e}")
