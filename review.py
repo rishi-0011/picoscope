@@ -211,9 +211,16 @@ class SmartReviewNavToolbar(NavigationToolbar2Tk):
 
     def _make_compact(self):
         for child in self.winfo_children():
+            if isinstance(child, (ttk.Separator, tk.Frame)):
+                try:
+                    if not child.winfo_children():
+                        child.pack_forget()
+                except Exception:
+                    pass
             if isinstance(child, (tk.Button, ttk.Button)):
                 try:
-                    child.configure(padx=1, pady=1)
+                    child.configure(padx=0, pady=0)
+                    child.pack_configure(padx=0, pady=0)
                 except Exception:
                     pass
 
@@ -621,81 +628,81 @@ def build_review_ui(parent_frame, app=None):
     # ----------------------------------------------------
     # Right Control Sidebar (Review Ch1 & Review Ch2 controls)
     # ----------------------------------------------------
-    sidebar = tk.Frame(main_split, bg="#8c97a8", bd=2, relief="groove", padx=10, pady=8)
+    sidebar = tk.Frame(main_split, bg="#8c97a8", bd=2, relief="groove", padx=5, pady=4)
     sidebar.grid(row=0, column=1, sticky="ns")
     sidebar.columnconfigure(0, weight=1)
 
     # --- SECTION 1: Review Ch1 ---
     ch1_sec = tk.Frame(sidebar, bg="#8c97a8")
-    ch1_sec.pack(fill="x", pady=(0, 5))
+    ch1_sec.pack(fill="x", pady=(0, 2))
 
     tk.Label(ch1_sec, text="Review Ch1", bg="#8c97a8", fg="#facc15",
-             font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 4))
+             font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 2))
 
-    tk.Button(ch1_sec, text="Load...", bg="#facc15", fg="black", font=("Segoe UI", 9, "bold"),
-              relief="raised", bd=2, width=18, pady=2, command=lambda: load_channel_file("Ch1")).pack(fill="x", pady=3)
+    tk.Button(ch1_sec, text="Load...", bg="#facc15", fg="black", font=("Segoe UI", 8, "bold"),
+              relief="raised", bd=2, pady=1, command=lambda: load_channel_file("Ch1")).pack(fill="x", pady=2)
 
-    tk.Button(ch1_sec, text="Remove Wave", bg="#f97316", fg="black", font=("Segoe UI", 9, "bold"),
-              relief="raised", bd=2, width=18, pady=2, command=lambda: remove_channel_wave("Ch1")).pack(fill="x", pady=3)
+    tk.Button(ch1_sec, text="Remove Wave", bg="#f97316", fg="black", font=("Segoe UI", 8, "bold"),
+              relief="raised", bd=2, pady=1, command=lambda: remove_channel_wave("Ch1")).pack(fill="x", pady=2)
 
-    tk.Button(ch1_sec, text="Parameters", bg="#881337", fg="white", font=("Segoe UI", 9, "bold"),
-              relief="raised", bd=2, width=18, pady=2, command=lambda: show_parameters_dialog("Ch1")).pack(fill="x", pady=3)
+    tk.Button(ch1_sec, text="Parameters", bg="#881337", fg="white", font=("Segoe UI", 8, "bold"),
+              relief="raised", bd=2, pady=1, command=lambda: show_parameters_dialog("Ch1")).pack(fill="x", pady=2)
 
     # Compact Native Toolbar under Parameters for Ch1 (includes custom Pan Arrows + MK button)
     tb_ch1_frame = tk.Frame(ch1_sec, bg="#8c97a8")
-    tb_ch1_frame.pack(fill="x", pady=(2, 4))
+    tb_ch1_frame.pack(fill="x", pady=(1, 3))
     app.tb_ch1 = SmartReviewNavToolbar(canvas, tb_ch1_frame, pan_callback=lambda d: pan_plot_channel(d, "Ch1"),
                                        mk_callback=lambda: toggle_markers("Ch1"),
                                        home_callback=lambda: draw_plots(active_subtab.get()))
     app.tb_ch1.pack(side="left")
 
     # Separator
-    ttk.Separator(sidebar, orient="horizontal").pack(fill="x", pady=6)
+    ttk.Separator(sidebar, orient="horizontal").pack(fill="x", pady=4)
 
     # --- SECTION 2: Active Wave Row ---
     active_wave_frame = tk.Frame(sidebar, bg="#8c97a8")
-    active_wave_frame.pack(fill="x", pady=4)
+    active_wave_frame.pack(fill="x", pady=2)
 
     tk.Label(active_wave_frame, text="Active Wave", bg="#8c97a8", fg="#1e293b",
-             font=("Segoe UI", 9, "bold")).pack(side="left", padx=(0, 5))
+             font=("Segoe UI", 8, "bold")).pack(side="left", padx=(0, 3))
 
     blue_box = tk.Label(active_wave_frame, bg="#0000ff", width=2, height=1, relief="solid", bd=1)
-    blue_box.pack(side="left", padx=(0, 5))
+    blue_box.pack(side="left", padx=(0, 3))
 
-    spin_wave = tk.Spinbox(active_wave_frame, from_=1, to=99, width=4, font=("Segoe UI", 9, "bold"), justify="center")
+    spin_wave = tk.Spinbox(active_wave_frame, from_=1, to=99, width=3, font=("Segoe UI", 8, "bold"), justify="center")
     spin_wave.pack(side="left")
 
     # Separator
-    ttk.Separator(sidebar, orient="horizontal").pack(fill="x", pady=6)
+    ttk.Separator(sidebar, orient="horizontal").pack(fill="x", pady=4)
 
     # --- SECTION 3: Review Ch2 ---
     ch2_sec = tk.Frame(sidebar, bg="#8c97a8")
-    ch2_sec.pack(fill="x", pady=(0, 5))
+    ch2_sec.pack(fill="x", pady=(0, 2))
 
     tk.Label(ch2_sec, text="Review Ch2", bg="#8c97a8", fg="#2563eb",
-             font=("Segoe UI", 11, "bold")).pack(anchor="w", pady=(0, 4))
+             font=("Segoe UI", 10, "bold")).pack(anchor="w", pady=(0, 2))
 
-    tk.Button(ch2_sec, text="Load...", bg="#facc15", fg="black", font=("Segoe UI", 9, "bold"),
-              relief="raised", bd=2, width=18, pady=2, command=lambda: load_channel_file("Ch2")).pack(fill="x", pady=3)
+    tk.Button(ch2_sec, text="Load...", bg="#facc15", fg="black", font=("Segoe UI", 8, "bold"),
+              relief="raised", bd=2, pady=1, command=lambda: load_channel_file("Ch2")).pack(fill="x", pady=2)
 
-    tk.Button(ch2_sec, text="Remove Wave", bg="#f97316", fg="black", font=("Segoe UI", 9, "bold"),
-              relief="raised", bd=2, width=18, pady=2, command=lambda: remove_channel_wave("Ch2")).pack(fill="x", pady=3)
+    tk.Button(ch2_sec, text="Remove Wave", bg="#f97316", fg="black", font=("Segoe UI", 8, "bold"),
+              relief="raised", bd=2, pady=1, command=lambda: remove_channel_wave("Ch2")).pack(fill="x", pady=2)
 
-    tk.Button(ch2_sec, text="Parameters", bg="#881337", fg="white", font=("Segoe UI", 9, "bold"),
-              relief="raised", bd=2, width=18, pady=2, command=lambda: show_parameters_dialog("Ch2")).pack(fill="x", pady=3)
+    tk.Button(ch2_sec, text="Parameters", bg="#881337", fg="white", font=("Segoe UI", 8, "bold"),
+              relief="raised", bd=2, pady=1, command=lambda: show_parameters_dialog("Ch2")).pack(fill="x", pady=2)
 
-    tk.Button(ch2_sec, text="Save All as...", bg="#2563eb", fg="white", font=("Segoe UI", 9, "bold"),
-              relief="raised", bd=2, width=18, pady=2, command=save_all_as).pack(fill="x", pady=3)
+    tk.Button(ch2_sec, text="Save All as...", bg="#2563eb", fg="white", font=("Segoe UI", 8, "bold"),
+              relief="raised", bd=2, pady=1, command=save_all_as).pack(fill="x", pady=2)
 
-    tk.Button(ch2_sec, text="Export", bg="#facc15", fg="black", font=("Segoe UI", 9, "bold"),
-              relief="raised", bd=2, width=18, pady=2, command=export_data).pack(fill="x", pady=3)
+    tk.Button(ch2_sec, text="Export", bg="#facc15", fg="black", font=("Segoe UI", 8, "bold"),
+              relief="raised", bd=2, pady=1, command=export_data).pack(fill="x", pady=2)
 
-    tk.Button(ch2_sec, text="Print", bg="#60a5fa", fg="black", font=("Segoe UI", 9, "bold"),
-              relief="raised", bd=2, width=18, pady=2, command=save_all_as).pack(fill="x", pady=3)
+    tk.Button(ch2_sec, text="Print", bg="#60a5fa", fg="black", font=("Segoe UI", 8, "bold"),
+              relief="raised", bd=2, pady=1, command=save_all_as).pack(fill="x", pady=2)
 
     # Compact Native Toolbar under Parameters/Print for Ch2 (includes custom Pan Arrows + MK button)
     tb_ch2_frame = tk.Frame(ch2_sec, bg="#8c97a8")
-    tb_ch2_frame.pack(fill="x", pady=(2, 4))
+    tb_ch2_frame.pack(fill="x", pady=(1, 3))
     app.tb_ch2 = SmartReviewNavToolbar(canvas, tb_ch2_frame, pan_callback=lambda d: pan_plot_channel(d, "Ch2"),
                                        mk_callback=lambda: toggle_markers("Ch2"),
                                        home_callback=lambda: draw_plots(active_subtab.get()))
