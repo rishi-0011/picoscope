@@ -134,16 +134,14 @@ def calculate_iec_parameters(time, raw_voltage):
 # SMART NAVIGATION TOOLBAR WITH NATIVE CUSTOM ARROWS & MK BUTTON
 # ----------------------------------------------------------------------
 class SmartReviewNavToolbar(NavigationToolbar2Tk):
-    toolitems = [t for t in NavigationToolbar2Tk.toolitems if t[0] not in ('Back', 'Forward')]
+    toolitems = []
 
     def __init__(self, canvas, window, pan_callback=None, mk_callback=None, home_callback=None):
         super().__init__(canvas, window)
         self.pan_callback = pan_callback
         self.mk_callback = mk_callback
         self.home_callback = home_callback
-        self._inject_custom_arrows()
-        self._add_mk_button()
-        self._make_compact()
+        self._small_images = []
 
         if hasattr(self, 'message'):
             try: self.message.pack_forget()
@@ -151,6 +149,8 @@ class SmartReviewNavToolbar(NavigationToolbar2Tk):
         if hasattr(self, 'loc_label'):
             try: self.loc_label.pack_forget()
             except: pass
+
+        self._build_micro_toolbar()
 
     def set_message(self, s):
         pass
@@ -162,45 +162,6 @@ class SmartReviewNavToolbar(NavigationToolbar2Tk):
         else:
             self.canvas.draw_idle()
 
-    def _inject_custom_arrows(self):
-        try:
-            import matplotlib.cbook as cbook
-            original_get_data_path = cbook._get_data_path
-
-            def hooked_get_data_path(path_type, *args, **kwargs):
-                if path_type == 'images' and args:
-                    img_name = args[0]
-                    local_images = ['left.png', 'right.png', 'up.png', 'down.png',
-                                    'left_large.png', 'right_large.png', 'up_large.png', 'down_large.png']
-                    if img_name in local_images:
-                        base_dir = pathlib.Path(os.path.dirname(__file__)) / 'images'
-                        return (base_dir / img_name).absolute()
-                return original_get_data_path(path_type, *args, **kwargs)
-
-            cbook._get_data_path = hooked_get_data_path
-
-            btn_left = self._Button('Pan Left', 'left.png', False, lambda: self._do_pan('left'))
-            btn_right = self._Button('Pan Right', 'right.png', False, lambda: self._do_pan('right'))
-            btn_up = self._Button('Pan Up', 'up.png', False, lambda: self._do_pan('up'))
-            btn_down = self._Button('Pan Down', 'down.png', False, lambda: self._do_pan('down'))
-
-            children = self.pack_slaves()
-            my_btns = children[-4:]
-            insert_before = children[1] if len(children) > 5 else None
-
-            if insert_before:
-                for b in my_btns:
-                    b.pack(side=tk.LEFT, before=insert_before)
-
-            cbook._get_data_path = original_get_data_path
-        except Exception as e:
-            print("Could not load native pan icons in review toolbar:", e)
-
-    def _add_mk_button(self):
-        btn_mk = tk.Button(self, text="MK", font=("Segoe UI", 7, "bold"), bg="#facc15", fg="black",
-                           width=2, relief="raised", bd=1, cursor="hand2", command=self._do_mk)
-        btn_mk.pack(side=tk.LEFT, padx=1)
-
     def _do_mk(self):
         if self.mk_callback:
             self.mk_callback()
@@ -209,30 +170,41 @@ class SmartReviewNavToolbar(NavigationToolbar2Tk):
         if self.pan_callback:
             self.pan_callback(direction)
 
-    def _make_compact(self):
+    def _build_micro_toolbar(self):
+        import matplotlib.cbook as cbook
         from PIL import Image, ImageTk
-        self._small_images = []
 
-        for child in list(self.winfo_children()):
-            if isinstance(child, (ttk.Separator, tk.Frame)):
-                try:
-                    if not child.winfo_children():
-                        child.pack_forget()
-                except Exception:
-                    pass
-            elif isinstance(child, (tk.Button, ttk.Button)):
-                try:
-                    child.configure(padx=0, pady=0, bd=1)
-                    child.pack_configure(padx=0, pady=0)
-                    img_name = child.cget("image")
-                    if img_name:
-                        py_img = ImageTk.getimage(img_name)
-                        py_img_resized = py_img.resize((15, 15), Image.Resampling.LANCZOS)
-                        photo = ImageTk.PhotoImage(py_img_resized)
-                        child.config(image=photo)
-                        self._small_images.append(photo)
-                except Exception:
-                    pass
+        mpl_img_path = cbook._get_data_path('images')
+        local_img_path = pathlib.Path(os.path.dirname(__file__)) / 'images'
+
+        tools = [
+            ("Home", mpl_img_path / "home.png", lambda: self.home()),
+            ("Left", local_img_path / "left.png", lambda: self._do_pan('left')),
+            ("Right", local_img_path / "right.png", lambda: self._do_pan('right')),
+            ("Up", local_img_path / "up.png", lambda: self._do_pan('up')),
+            ("Down", local_img_path / "down.png", lambda: self._do_pan('down')),
+            ("Pan", mpl_img_path / "move.png", lambda: self.pan()),
+            ("Zoom", mpl_img_path / "zoom_to_rect.png", lambda: self.zoom()),
+            ("Configure", mpl_img_path / "subplots.png", lambda: self.configure_subplots()),
+            ("Save", mpl_img_path / "filesave.png", lambda: self.save_figure()),
+        ]
+
+        for name, img_file, cmd in tools:
+            try:
+                img = Image.open(img_file).convert("RGBA")
+                img = img.resize((12, 12), Image.Resampling.LANCZOS)
+                photo = ImageTk.PhotoImage(img)
+                self._small_images.append(photo)
+
+                btn = tk.Button(self, image=photo, command=cmd, relief="raised", bd=1,
+                                bg="#e2e8f0", activebackground="#cbd5e1", padx=0, pady=0)
+                btn.pack(side=tk.LEFT, padx=1, pady=1)
+            except Exception as e:
+                print(f"Error loading micro icon {name}:", e)
+
+        btn_mk = tk.Button(self, text="MK", font=("Segoe UI", 7, "bold"), bg="#facc15", fg="black",
+                           width=2, relief="raised", bd=1, cursor="hand2", command=self._do_mk, padx=0, pady=0)
+        btn_mk.pack(side=tk.LEFT, padx=1, pady=1)
 
 # ----------------------------------------------------------------------
 # REVIEW TAB UI BUILDER
@@ -378,69 +350,50 @@ def build_review_ui(parent_frame, app=None):
     # Helper function to plot a channel waveform
     def render_channel_plot(ax, d, title_text="Channel", show_mk=True):
         ax.clear()
-        ax.set_facecolor("#dce2ee")
-        ax.grid(True, color="#a0a8b8", linestyle="-", linewidth=0.7)
+        ax.set_facecolor("#c4c8d8")
+        ax.grid(True, color="#9ca4b8", linestyle="-", linewidth=0.7)
         ax.set_ylabel("Voltage [kV]", fontsize=9, fontweight="bold")
         ax.set_xlabel("Time [s]", fontsize=9, fontweight="bold")
         ax.tick_params(labelsize=8)
+
+        # Draw zero reference baseline
+        ax.axhline(0, color="#555555", linestyle="--", linewidth=0.8, alpha=0.7)
 
         if not d:
             ax.set_title(f"{title_text} - No Data Loaded", fontsize=10, fontweight="bold")
             return
 
         time_s = d['time_us'] * 1e-6
-        ax.plot(time_s, d['raw_v'], label='Raw Waveform', color='#1e3a8a', linewidth=1.2)
+        ax.plot(time_s, d['raw_v'], label='Raw Waveform', color='#0033cc', linewidth=1.2)
 
+        # Render loaded filename at bottom right corner
+        filename = d.get('filename', '')
+        if filename:
+            ax.text(0.99, 0.02, os.path.basename(filename), transform=ax.transAxes,
+                    ha='right', va='bottom', fontsize=8, color='#1e293b', fontweight='bold')
+
+        # Draw 30%, 50%, 90% dotted reference lines, white markers, and text tags
         if show_mk and d['t1_us'] is not None:
             v_p = d['v_peak']
-            sign = 1 if v_p >= 0 else -1
 
             markers = [
-                (d['t30_us'] * 1e-6 if d['t30_us'] else None, d['v30'], '30%', 'purple'),
-                (d['t50_us'] * 1e-6 if d['t50_us'] else None, d['v50'], '50%', 'blue'),
-                (d['t90_us'] * 1e-6 if d['t90_us'] else None, d['v90'], '90%', 'green')
+                (d['t30_us'] * 1e-6 if d['t30_us'] else None, d['v30'], '30%'),
+                (d['t50_us'] * 1e-6 if d['t50_us'] else None, d['v50'], '50%'),
+                (d['t90_us'] * 1e-6 if d['t90_us'] else None, d['v90'], '90%')
             ]
 
-            for t_val, v_val, label, color in markers:
+            for t_val, v_val, label in markers:
                 if t_val is not None:
-                    ax.hlines(v_val, 0, t_val, color=color, linestyle=':', alpha=0.6)
-                    ax.vlines(t_val, 0, v_val, color=color, linestyle=':', alpha=0.6)
-                    ax.plot(t_val, v_val, marker='o', color=color, markersize=4)
-                    ax.text(t_val, v_val, f' {label}', va='center', color=color, fontsize=8, fontweight="bold")
+                    # Full horizontal dotted line across the plot
+                    ax.axhline(v_val, color='#ffffff', linestyle=':', linewidth=1.0, alpha=0.9)
+                    # White dot marker with black outline on the curve
+                    ax.plot(t_val, v_val, marker='o', color='white', markeredgecolor='black', markersize=4.5)
+                    # Text label (30%, 50%, 90%) directly beside/above marker
+                    ax.text(t_val, v_val, f" {label} ", color='white', fontsize=8, fontweight='bold',
+                            ha='center', va='bottom',
+                            bbox=dict(facecolor='#1e293b', edgecolor='none', alpha=0.5, pad=1))
 
-            o1_s = d['o1_us'] * 1e-6 if d['o1_us'] else 0
-            t1_s = d['t1_us'] * 1e-6 if d['t1_us'] else 0
-
-            ax.plot(o1_s, 0, marker='o', color='black', markersize=4)
-            ax.vlines(o1_s, 0, v_p * 0.15, color='black', linestyle='--', alpha=0.6)
-
-            y_t1 = v_p * 0.05
-            ax.vlines(o1_s + t1_s, 0, y_t1, color='purple', linestyle=':', alpha=0.6)
-            ax.annotate(
-                '', xy=(o1_s, y_t1), xytext=(o1_s + t1_s, y_t1),
-                arrowprops=dict(arrowstyle='<->', color='purple', lw=1.2)
-            )
-            ax.text(o1_s + (t1_s / 2), y_t1, f" T1 = {d['t1_us']:.2f} µs ",
-                    ha='center', va='bottom' if sign > 0 else 'top', color='purple', fontsize=8,
-                    bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, pad=1))
-
-            if d['t2_us']:
-                t2_s = d['t2_us'] * 1e-6
-                y_t2 = v_p * 0.12
-                ax.vlines(o1_s + t2_s, 0, y_t2, color='blue', linestyle=':', alpha=0.6)
-                ax.annotate(
-                    '', xy=(o1_s, y_t2), xytext=(o1_s + t2_s, y_t2),
-                    arrowprops=dict(arrowstyle='<->', color='blue', lw=1.2)
-                )
-
-                is_chopped = (d['t2_us'] < 15.0)
-                t2_plot_label = "Tc" if is_chopped else "T2"
-
-                ax.text(o1_s + (t2_s / 2), y_t2, f" {t2_plot_label} = {d['t2_us']:.1f} µs ",
-                        ha='center', va='bottom' if sign > 0 else 'top', color='blue', fontsize=8,
-                        bbox=dict(facecolor='white', edgecolor='none', alpha=0.8, pad=1))
-
-        ax.set_title(f"{title_text} - IEC 60060-1 Waveform", fontsize=10, fontweight="bold")
+        ax.set_title(f"{title_text}", fontsize=10, fontweight="bold")
         ax.legend(loc="upper right", fontsize=8)
 
     def draw_plots(mode="Channel 1&2"):
@@ -499,6 +452,7 @@ def build_review_ui(parent_frame, app=None):
             volt_arr = raw_data[:, 1]
 
             calc_res = calculate_iec_parameters(time_arr, volt_arr)
+            calc_res['filename'] = file_path
             ch_data[ch_key] = calc_res
             draw_plots(active_subtab.get())
             messagebox.showinfo("Success", f"Successfully loaded and calculated IEC parameters for {ch_key}!")
@@ -638,8 +592,9 @@ def build_review_ui(parent_frame, app=None):
     # ----------------------------------------------------
     # Right Control Sidebar (Review Ch1 & Review Ch2 controls)
     # ----------------------------------------------------
-    sidebar = tk.Frame(main_split, bg="#8c97a8", bd=2, relief="groove", padx=5, pady=4)
+    sidebar = tk.Frame(main_split, bg="#8c97a8", bd=2, relief="groove", width=150, padx=2, pady=2)
     sidebar.grid(row=0, column=1, sticky="ns")
+    sidebar.grid_propagate(False)
     sidebar.columnconfigure(0, weight=1)
 
     # --- SECTION 1: Review Ch1 ---
