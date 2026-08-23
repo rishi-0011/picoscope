@@ -31,6 +31,11 @@ def init_scope(app, config):
         app.status = {"openunit": 0}
         print("Demo mode initialized.")
         return
+
+    if getattr(app, 'chandle', None) is not None and app.chandle != -1:
+        print("Scope handle already open:", app.chandle)
+        app.is_scope_connected = True
+        return
     try:
         from picosdk.functions import assert_pico_ok, mV2adc
         

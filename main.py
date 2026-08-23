@@ -167,6 +167,10 @@ class PicoScopeApp:
             except Exception:
                 pass
 
+    def try_connect_scope(self):
+        if getattr(self, 'chandle', None) is not None and self.chandle != -1:
+            return True
+
         threading.Thread(target=hide_splash, daemon=True).start()
 
         try:
