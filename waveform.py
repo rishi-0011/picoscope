@@ -586,13 +586,18 @@ def build_waveform_ui(parent_frame, app):
         colors = ["#32cd32", "#ff00ff", "#00ffff", "#ff9900", "#ff0000", "#ffff00", "#0000ff", "#8a2be2", "#ff1493", "#00ff7f"]
         c_idx = (getattr(app, 'current_shot', 1) - 1) % len(colors)
         
+        def smooth_curve(arr, win=7):
+            if arr is None or len(arr) < win: return arr
+            return np.convolve(arr, np.ones(win)/win, mode='same')
+
         if ax1 is not None and y_data_A is not None:
             if ax2 is None:
                 ax1.set_xlabel(f"Time ({time_unit})", color="white", fontsize=10, fontweight="bold")
             else:
                 ax1.set_xlabel("")
                 
-            ax1.plot(x_data, y_data_A, color=colors[c_idx], linewidth=1.5)
+            y_plot_A = smooth_curve(y_data_A, win=7)
+            ax1.plot(x_data, y_plot_A, color=colors[c_idx], linewidth=1.5)
             ax1.set_xlim(x_min, x_max)
             ax1.set_xticks(np.linspace(x_min, x_max, 11))
             
@@ -613,7 +618,8 @@ def build_waveform_ui(parent_frame, app):
             
         if ax2 is not None and y_data_B is not None:
             ax2.set_xlabel(f"Time ({time_unit})", color="white", fontsize=10, fontweight="bold")
-            ax2.plot(x_data, y_data_B, color=colors[c_idx], linewidth=1.5)
+            y_plot_B = smooth_curve(y_data_B, win=7)
+            ax2.plot(x_data, y_plot_B, color=colors[c_idx], linewidth=1.5)
             ax2.set_xlim(x_min, x_max)
             ax2.set_xticks(np.linspace(x_min, x_max, 11))
             
