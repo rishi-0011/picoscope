@@ -284,8 +284,11 @@ def fetch_hardware_data(app, config):
         ch2_active = config.get('ch2_active', False)
         r_enum_A, r_enum_B, nSamp, tInt, mx_mv_A, mx_mv_B, t_str, adc_max_val, pre_trig_samples = app.capture_context
         
-        x = np.linspace(0, 10, nSamp)
-        polarity = config.get('polarity', 'Positive')
+        pre_len = max(1, int(pre_trig_samples))
+        post_len = nSamp - pre_len
+        
+        x = np.linspace(0, 10, post_len)
+        polarity = config.get('polarity', 'Negative')
         sign = 1 if polarity == 'Positive' else -1
         
         ch1_type = getattr(app, 'ch1_type', 'Voltage')
@@ -294,8 +297,11 @@ def fetch_hardware_data(app, config):
         exp_v = float(config.get('Expected Voltage [kV]' if ch1_type == 'Voltage' else 'Expected Current [A]', 150))
         exp_i = float(config.get('Expected Current [A]' if ch2_type == 'Current' else 'Expected Voltage [kV]', 300))
         
-        y_data_A = (sign * (exp_v * 0.8) * np.sin(x)) if ch1_active else None
-        y_data_B = (sign * (exp_i * 0.8) * np.cos(x)) if ch2_active else None
+        imp_A = sign * exp_v * 0.85 * (1.0 - np.exp(-3.0 * x)) * np.exp(-0.4 * x)
+        imp_B = sign * exp_i * 0.85 * (1.0 - np.exp(-3.0 * x)) * np.exp(-0.4 * x)
+        
+        y_data_A = np.concatenate([np.zeros(pre_len), imp_A]) if ch1_active else None
+        y_data_B = np.concatenate([np.zeros(pre_len), imp_B]) if ch2_active else None
         
         return y_data_A, y_data_B, tInt, pre_trig_samples, mx_mv_A, mx_mv_B, nSamp, t_str
     c_info = read_control_info()
