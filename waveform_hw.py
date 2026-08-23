@@ -124,7 +124,13 @@ def init_scope(app, config):
 
 def run_hardware_block(app, config, total_time_ns, max_mv_A, max_mv_B, time_str, range_enum_A, range_enum_B, timebase, noSamples, res_str):
     c_info = read_control_info()
-    pre_trig_percent = float(c_info.get('Pre-trigger [%]', 0)) / 100.0
+    try:
+        pre_trig_percent = float(c_info.get('Pre-trigger [%]', 10)) / 100.0
+    except:
+        pre_trig_percent = 0.10
+    if pre_trig_percent <= 0 or pre_trig_percent > 0.5:
+        pre_trig_percent = 0.10
+
     thresh_percent = float(c_info.get('Threshold [%]', 18)) / 100.0
 
     if getattr(app, 'is_demo_mode', False):
