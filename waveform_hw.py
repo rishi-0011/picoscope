@@ -194,8 +194,8 @@ def run_hardware_block(app, config, total_time_ns, max_mv_A, max_mv_B, time_str,
         scope_input_v = exp_v / att if att != 0 else exp_v
         
         trig_thresh_mv = int((scope_input_v * thresh_percent) * 1000)
-        if abs(trig_thresh_mv) < 20:
-            trig_thresh_mv = 20 if polarity == 'Positive' else -20
+        if abs(trig_thresh_mv) < 250:
+            trig_thresh_mv = 250 if polarity == 'Positive' else -250
         
         # Trigger direction and threshold negation for negative polarity
         if polarity == 'Positive':
