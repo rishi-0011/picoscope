@@ -594,22 +594,27 @@ def build_waveform_ui(parent_frame, app):
             if y is None or len(y) < 20: return y
             try:
                 abs_y = np.abs(y)
-                p_idx = np.argmax(abs_y)
-                if abs_y[p_idx] < 0.05: return y
-                thresh = 0.15 * abs_y[p_idx]
-                front = np.where(abs_y >= thresh)[0]
-                if len(front) == 0: return y
-                f_idx = front[0]
+                max_val = np.max(abs_y)
+                if max_val < 0.05: return y
+                
+                thresh = 0.15 * max_val
+                front_indices = np.where(abs_y >= thresh)[0]
+                if len(front_indices) == 0: return y
+                f_idx = front_indices[0]
+                
                 dt = x[1] - x[0] if len(x) > 1 else 1.0
                 t_idx = int(target_time / dt) if dt > 0 else int(len(y) * 0.10)
-                shift = f_idx - t_idx
-                if shift > 0 and (f_idx + (len(y) - t_idx)) <= len(y):
-                    aligned = np.concatenate([np.zeros(t_idx), y[f_idx:f_idx + (len(y) - t_idx)]])
+                
+                if f_idx > t_idx:
+                    body = y[f_idx:]
+                    pre_zeros = np.zeros(t_idx)
+                    aligned = np.concatenate([pre_zeros, body])
                     if len(aligned) < len(y):
-                        aligned = np.pad(aligned, (0, len(y) - len(aligned)), mode='edge')
+                        pad_len = len(y) - len(aligned)
+                        aligned = np.pad(aligned, (0, pad_len), mode='edge')
                     return aligned[:len(y)]
-            except Exception:
-                pass
+            except Exception as e:
+                print("Alignment error:", e)
             return y
 
         if ax1 is not None and y_data_A is not None:
