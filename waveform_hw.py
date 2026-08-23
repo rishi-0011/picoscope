@@ -155,69 +155,72 @@ def run_hardware_block(app, config, total_time_ns, max_mv_A, max_mv_B, time_str,
     ch1_active = config.get('ch1_active', True)
     ch2_active = config.get('ch2_active', False)
     
-    if getattr(app, 'update_hardware_requested', False):
+    try:
+        if res_str == "8 bits":
+            res_enum = ps.PS5000A_DEVICE_RESOLUTION["PS5000A_DR_8BIT"]
+            maxADC = ctypes.c_int16(32512)
+        else:
+            res_enum = ps.PS5000A_DEVICE_RESOLUTION["PS5000A_DR_14BIT"]
+            maxADC = ctypes.c_int16(32767)
+            
         try:
-            if res_str == "8 bits":
-                res_enum = ps.PS5000A_DEVICE_RESOLUTION["PS5000A_DR_8BIT"]
-                maxADC = ctypes.c_int16(32512)
-            else:
-                res_enum = ps.PS5000A_DEVICE_RESOLUTION["PS5000A_DR_14BIT"]
-                maxADC = ctypes.c_int16(32767)
-                
-            try:
-                ps.ps5000aSetDeviceResolution(app.chandle, res_enum)
-            except Exception as e:
-                print("SetDeviceResolution error:", e)
-
-            # Source selection logic
-            if ch1_active:
-                trig_ch = ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"]
-            elif ch2_active and not ch1_active:
-                trig_ch = ps.PS5000A_CHANNEL["PS5000A_CHANNEL_B"]
-            else:
-                trig_ch = ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"] # Default fallback
-            
-            polarity = config.get('polarity', 'Negative')
-            
-            # Use Channel A's or Channel B's expected value based on the trigger channel
-            if trig_ch == ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"]:
-                exp_val_str = config.get('Expected Voltage [kV]' if getattr(app, 'ch1_type', 'Voltage') == 'Voltage' else 'Expected Current [A]', 150)
-                att = float(config.get('ch1_int', 1)) * float(config.get('ch1_ext', 1))
-                is_voltage = getattr(app, 'ch1_type', 'Voltage') == 'Voltage'
-            else:
-                exp_val_str = config.get('Expected Voltage [kV]' if getattr(app, 'ch2_type', 'Voltage') == 'Voltage' else 'Expected Current [A]', 150)
-                att = float(config.get('ch2_int', 1)) * float(config.get('ch2_ext', 1))
-                is_voltage = getattr(app, 'ch2_type', 'Voltage') == 'Voltage'
-                
-            exp_val = float(exp_val_str) if str(exp_val_str).strip() != '' else 150.0
-            exp_v = exp_val * 1000.0 if is_voltage else exp_val
-            
-            scope_input_v = exp_v / att if att != 0 else exp_v
-            
-            trig_thresh_mv = int((scope_input_v * thresh_percent) * 1000)
-            
-            # Trigger direction and threshold negation for negative polarity
-            if polarity == 'Positive':
-                trig_dir = ps.PS5000A_THRESHOLD_DIRECTION["PS5000A_RISING"]
-            else:
-                trig_dir = ps.PS5000A_THRESHOLD_DIRECTION["PS5000A_FALLING"]
-                trig_thresh_mv = -abs(trig_thresh_mv)
-            
-            trig_adc = mV2adc(trig_thresh_mv, range_enum_A if ch1_active else range_enum_B, maxADC)
-            
-            trig_ch_name = "CHANNEL_A" if trig_ch == ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"] else "CHANNEL_B"
-            trig_dir_name = "RISING" if polarity == 'Positive' else "FALLING"
-            print(f"\n[HARDWARE] Trigger Configured -> Source: {trig_ch_name} | Direction: {trig_dir_name} | Threshold: {trig_thresh_mv} mV\n")
-            
-            ps.ps5000aSetChannel(app.chandle, ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"], 1 if ch1_active else 0, 1, range_enum_A, 0)
-            ps.ps5000aSetChannel(app.chandle, ps.PS5000A_CHANNEL["PS5000A_CHANNEL_B"], 1 if ch2_active else 0, 1, range_enum_B, 0)
-            
-            ps.ps5000aSetSimpleTrigger(app.chandle, 1, trig_ch, trig_adc, trig_dir, 0, 0)
-            
-            app.update_hardware_requested = False
+            ps.ps5000aSetDeviceResolution(app.chandle, res_enum)
         except Exception as e:
-            print("Hardware Config Error:", e)
-            app.update_hardware_requested = False
+            print("SetDeviceResolution error:", e)
+
+        # Source selection logic
+        if ch1_active:
+            trig_ch = ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"]
+        elif ch2_active and not ch1_active:
+            trig_ch = ps.PS5000A_CHANNEL["PS5000A_CHANNEL_B"]
+        else:
+            trig_ch = ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"] # Default fallback
+        
+        polarity = config.get('polarity', 'Negative')
+        
+        # Use Channel A's or Channel B's expected value based on the trigger channel
+        if trig_ch == ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"]:
+            exp_val_str = config.get('Expected Voltage [kV]' if getattr(app, 'ch1_type', 'Voltage') == 'Voltage' else 'Expected Current [A]', 150)
+            att = float(config.get('ch1_int', 1)) * float(config.get('ch1_ext', 1))
+            is_voltage = getattr(app, 'ch1_type', 'Voltage') == 'Voltage'
+        else:
+            exp_val_str = config.get('Expected Voltage [kV]' if getattr(app, 'ch2_type', 'Voltage') == 'Voltage' else 'Expected Current [A]', 150)
+            att = float(config.get('ch2_int', 1)) * float(config.get('ch2_ext', 1))
+            is_voltage = getattr(app, 'ch2_type', 'Voltage') == 'Voltage'
+            
+        exp_val = float(exp_val_str) if str(exp_val_str).strip() != '' else 150.0
+        exp_v = exp_val * 1000.0 if is_voltage else exp_val
+        
+        scope_input_v = exp_v / att if att != 0 else exp_v
+        
+        trig_thresh_mv = int((scope_input_v * thresh_percent) * 1000)
+        if abs(trig_thresh_mv) < 20:
+            trig_thresh_mv = 20 if polarity == 'Positive' else -20
+        
+        # Trigger direction and threshold negation for negative polarity
+        if polarity == 'Positive':
+            trig_dir = ps.PS5000A_THRESHOLD_DIRECTION["PS5000A_RISING"]
+            trig_thresh_mv = abs(trig_thresh_mv)
+        else:
+            trig_dir = ps.PS5000A_THRESHOLD_DIRECTION["PS5000A_FALLING"]
+            trig_thresh_mv = -abs(trig_thresh_mv)
+        
+        trig_adc = mV2adc(trig_thresh_mv, range_enum_A if ch1_active else range_enum_B, maxADC)
+        
+        trig_ch_name = "CHANNEL_A" if trig_ch == ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"] else "CHANNEL_B"
+        trig_dir_name = "RISING" if polarity == 'Positive' else "FALLING"
+        print(f"\n[HARDWARE] Trigger Configured -> Source: {trig_ch_name} | Direction: {trig_dir_name} | Threshold: {trig_thresh_mv} mV\n")
+        
+        ps.ps5000aSetChannel(app.chandle, ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"], 1 if ch1_active else 0, 1, range_enum_A, 0)
+        ps.ps5000aSetChannel(app.chandle, ps.PS5000A_CHANNEL["PS5000A_CHANNEL_B"], 1 if ch2_active else 0, 1, range_enum_B, 0)
+        
+        # Enable Trigger (1) with auto_trigger_ms = 0 (WAIT INDEFINITELY FOR REAL IMPULSE TO FIRE!)
+        ps.ps5000aSetSimpleTrigger(app.chandle, 1, trig_ch, trig_adc, trig_dir, 0, 0)
+        
+        app.update_hardware_requested = False
+    except Exception as e:
+        print("Hardware Config Error:", e)
+        app.update_hardware_requested = False
 
     timeIntervalns = ctypes.c_float()
     returnedMaxSamples = ctypes.c_int32()
