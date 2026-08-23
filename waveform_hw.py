@@ -203,14 +203,17 @@ def run_hardware_block(app, config, total_time_ns, max_mv_A, max_mv_B, time_str,
         if abs(trig_thresh_mv) < 250:
             trig_thresh_mv = 250 if polarity == 'Positive' else -250
         
-        # Trigger direction and threshold negation for negative polarity
-        if polarity == 'Positive':
-            trig_dir = ps.PS5000A_THRESHOLD_DIRECTION["PS5000A_RISING"]
-            trig_thresh_mv = abs(trig_thresh_mv)
-        else:
-            trig_dir = ps.PS5000A_THRESHOLD_DIRECTION["PS5000A_FALLING"]
+        # Trigger direction: Use RISING_OR_FALLING dual-edge mode so hardware trigger fires instantly at 10 us
+        try:
+            trig_dir = ps.PS5000A_THRESHOLD_DIRECTION["PS5000A_RISING_OR_FALLING"]
+        except Exception:
+            trig_dir = ps.PS5000A_THRESHOLD_DIRECTION["PS5000A_RISING"] if polarity == 'Positive' else ps.PS5000A_THRESHOLD_DIRECTION["PS5000A_FALLING"]
+
+        if polarity == 'Negative':
             trig_thresh_mv = -abs(trig_thresh_mv)
-        
+        else:
+            trig_thresh_mv = abs(trig_thresh_mv)
+
         ps.ps5000aSetChannel(app.chandle, ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"], 1 if ch1_active else 0, 1, range_enum_A, 0)
         ps.ps5000aSetChannel(app.chandle, ps.PS5000A_CHANNEL["PS5000A_CHANNEL_B"], 1 if ch2_active else 0, 1, range_enum_B, 0)
 
@@ -220,8 +223,7 @@ def run_hardware_block(app, config, total_time_ns, max_mv_A, max_mv_B, time_str,
         trig_adc = ctypes.c_int16(trig_adc_val)
         
         trig_ch_name = "CHANNEL_A" if trig_ch == ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"] else "CHANNEL_B"
-        trig_dir_name = "RISING" if polarity == 'Positive' else "FALLING"
-        print(f"\n[HARDWARE] Trigger Configured -> Source: {trig_ch_name} | Direction: {trig_dir_name} | Threshold: {trig_thresh_mv} mV (ADC: {trig_adc_val})\n")
+        print(f"\n[HARDWARE] Trigger Configured (Dual Edge) -> Source: {trig_ch_name} | Threshold: {trig_thresh_mv} mV (ADC: {trig_adc_val})\n")
         
         # Enable Trigger (1) with auto_trigger_ms = 0 (WAIT INDEFINITELY FOR REAL IMPULSE TO FIRE!)
         ps.ps5000aSetSimpleTrigger(app.chandle, 1, trig_ch, trig_adc, trig_dir, 0, 0)
