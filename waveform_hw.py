@@ -205,14 +205,17 @@ def run_hardware_block(app, config, total_time_ns, max_mv_A, max_mv_B, time_str,
             trig_dir = ps.PS5000A_THRESHOLD_DIRECTION["PS5000A_FALLING"]
             trig_thresh_mv = -abs(trig_thresh_mv)
         
-        trig_adc = mV2adc(trig_thresh_mv, range_enum_A if ch1_active else range_enum_B, maxADC)
+        ps.ps5000aSetChannel(app.chandle, ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"], 1 if ch1_active else 0, 1, range_enum_A, 0)
+        ps.ps5000aSetChannel(app.chandle, ps.PS5000A_CHANNEL["PS5000A_CHANNEL_B"], 1 if ch2_active else 0, 1, range_enum_B, 0)
+
+        trig_adc_val = int(mV2adc(trig_thresh_mv, range_enum_A if ch1_active else range_enum_B, maxADC))
+        if trig_adc_val > 32000: trig_adc_val = 32000
+        if trig_adc_val < -32000: trig_adc_val = -32000
+        trig_adc = ctypes.c_int16(trig_adc_val)
         
         trig_ch_name = "CHANNEL_A" if trig_ch == ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"] else "CHANNEL_B"
         trig_dir_name = "RISING" if polarity == 'Positive' else "FALLING"
-        print(f"\n[HARDWARE] Trigger Configured -> Source: {trig_ch_name} | Direction: {trig_dir_name} | Threshold: {trig_thresh_mv} mV\n")
-        
-        ps.ps5000aSetChannel(app.chandle, ps.PS5000A_CHANNEL["PS5000A_CHANNEL_A"], 1 if ch1_active else 0, 1, range_enum_A, 0)
-        ps.ps5000aSetChannel(app.chandle, ps.PS5000A_CHANNEL["PS5000A_CHANNEL_B"], 1 if ch2_active else 0, 1, range_enum_B, 0)
+        print(f"\n[HARDWARE] Trigger Configured -> Source: {trig_ch_name} | Direction: {trig_dir_name} | Threshold: {trig_thresh_mv} mV (ADC: {trig_adc_val})\n")
         
         # Enable Trigger (1) with auto_trigger_ms = 0 (WAIT INDEFINITELY FOR REAL IMPULSE TO FIRE!)
         ps.ps5000aSetSimpleTrigger(app.chandle, 1, trig_ch, trig_adc, trig_dir, 0, 0)
@@ -236,13 +239,7 @@ def run_hardware_block(app, config, total_time_ns, max_mv_A, max_mv_B, time_str,
     status_run = ps.ps5000aRunBlock(app.chandle, pre_trig, post_trig, timebase, None, 0, None, None)
     
     if status_run != 0:
-        print("Failed to start run block:", status_run)
-        app.is_scope_connected = False
-        try:
-            ps = PicoScopeProxy(c_info.get('Scope', 'ps5000a'))
-            ps.ps5000aCloseUnit(app.chandle)
-        except: pass
-        app.chandle = None
+        print("Failed to start run block, status:", status_run)
         return False
         
     adc_max_val = 32512 if res_str == "8 bits" else 32767
