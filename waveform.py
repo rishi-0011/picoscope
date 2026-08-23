@@ -645,10 +645,14 @@ def build_waveform_ui(parent_frame, app):
                 peak_val = np.max(abs_y)
                 if peak_val < 0.1: return y
                 
-                thresh = 0.05 * peak_val
-                front_indices = np.where(abs_y >= thresh)[0]
-                if len(front_indices) == 0: return y
-                f_idx = front_indices[0]
+                p_idx = np.argmax(abs_y)
+                
+                # Search backwards from peak to find the true onset index where signal rises above baseline
+                pre_peak_indices = np.where(abs_y[:p_idx] <= 0.15 * peak_val)[0]
+                if len(pre_peak_indices) > 0:
+                    f_idx = pre_peak_indices[-1]
+                else:
+                    f_idx = 0
                 
                 dt = x[1] - x[0] if len(x) > 1 else (x[-1] / len(x))
                 t_idx = int(target_time / dt) if dt > 0 else int(len(y) * 0.10)
