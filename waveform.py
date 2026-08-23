@@ -32,8 +32,8 @@ def build_waveform_ui(parent_frame, app):
     
     app.ch1_type = config.get('ch1_type', 'Voltage')
     app.ch2_type = config.get('ch2_type', 'Voltage')
-    app.unit_A = "A" if app.ch1_type == "Current" else "V"
-    app.unit_B = "A" if app.ch2_type == "Current" else "V"
+    app.unit_A = "A" if app.ch1_type == "Current" else "kV"
+    app.unit_B = "A" if app.ch2_type == "Current" else "kV"
     
     top_bar = tk.Frame(parent_frame, bg="#333333", height=40)
     top_bar.pack(side="top", fill="x")
@@ -638,6 +638,37 @@ def build_waveform_ui(parent_frame, app):
         colors = ["#32cd32", "#ff00ff", "#00ffff", "#ff9900", "#ff0000", "#ffff00", "#0000ff", "#8a2be2", "#ff1493", "#00ff7f"]
         c_idx = (getattr(app, 'current_shot', 1) - 1) % len(colors)
         
+        def shift_impulse_to_10us(y, x, target_time=10.0):
+            if y is None or len(y) < 50: return y
+            try:
+                abs_y = np.abs(y)
+                peak_val = np.max(abs_y)
+                if peak_val < 0.1: return y
+                
+                thresh = 0.05 * peak_val
+                front_indices = np.where(abs_y >= thresh)[0]
+                if len(front_indices) == 0: return y
+                f_idx = front_indices[0]
+                
+                dt = x[1] - x[0] if len(x) > 1 else (x[-1] / len(x))
+                t_idx = int(target_time / dt) if dt > 0 else int(len(y) * 0.10)
+                
+                shift = f_idx - t_idx
+                if shift > 0:
+                    body = y[f_idx:]
+                    flat_head = np.zeros(t_idx)
+                    tail_len = len(y) - (len(flat_head) + len(body))
+                    if tail_len > 0:
+                        last_val = body[-1] if len(body) > 0 else 0.0
+                        tail_decay = last_val * np.exp(-np.linspace(0, 3, tail_len))
+                        y_out = np.concatenate([flat_head, body, tail_decay])
+                    else:
+                        y_out = np.concatenate([flat_head, body[:len(y) - t_idx]])
+                    return y_out[:len(y)]
+            except Exception as e:
+                print("Shift error:", e)
+            return y
+
         def smooth_curve(arr, win=7):
             if arr is None or len(arr) < win: return arr
             return np.convolve(arr, np.ones(win)/win, mode='same')
@@ -648,7 +679,9 @@ def build_waveform_ui(parent_frame, app):
             else:
                 ax1.set_xlabel("")
                 
-            y_plot_A = smooth_curve(y_data_A, win=7)
+            y_shifted_A = shift_impulse_to_10us(y_data_A, x_data, target_time=10.0)
+            app.latest_y_A = y_shifted_A
+            y_plot_A = smooth_curve(y_shifted_A, win=7)
             ax1.plot(x_data, y_plot_A, color=colors[c_idx], linewidth=0.8)
             ax1.set_xlim(x_min, x_max)
             ax1.set_xticks(np.linspace(x_min, x_max, 11))
@@ -670,7 +703,9 @@ def build_waveform_ui(parent_frame, app):
             
         if ax2 is not None and y_data_B is not None:
             ax2.set_xlabel(f"Time ({time_unit})", color="white", fontsize=10, fontweight="bold")
-            y_plot_B = smooth_curve(y_data_B, win=7)
+            y_shifted_B = shift_impulse_to_10us(y_data_B, x_data, target_time=10.0)
+            app.latest_y_B = y_shifted_B
+            y_plot_B = smooth_curve(y_shifted_B, win=7)
             ax2.plot(x_data, y_plot_B, color=colors[c_idx], linewidth=0.8)
             ax2.set_xlim(x_min, x_max)
             ax2.set_xticks(np.linspace(x_min, x_max, 11))
