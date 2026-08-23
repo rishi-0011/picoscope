@@ -590,13 +590,36 @@ def build_waveform_ui(parent_frame, app):
             if arr is None or len(arr) < win: return arr
             return np.convolve(arr, np.ones(win)/win, mode='same')
 
+        def align_impulse(y, x, target_time=10.0):
+            if y is None or len(y) < 20: return y
+            try:
+                abs_y = np.abs(y)
+                p_idx = np.argmax(abs_y)
+                if abs_y[p_idx] < 0.05: return y
+                thresh = 0.15 * abs_y[p_idx]
+                front = np.where(abs_y >= thresh)[0]
+                if len(front) == 0: return y
+                f_idx = front[0]
+                dt = x[1] - x[0] if len(x) > 1 else 1.0
+                t_idx = int(target_time / dt) if dt > 0 else int(len(y) * 0.10)
+                shift = f_idx - t_idx
+                if shift > 0 and (f_idx + (len(y) - t_idx)) <= len(y):
+                    aligned = np.concatenate([np.zeros(t_idx), y[f_idx:f_idx + (len(y) - t_idx)]])
+                    if len(aligned) < len(y):
+                        aligned = np.pad(aligned, (0, len(y) - len(aligned)), mode='edge')
+                    return aligned[:len(y)]
+            except Exception:
+                pass
+            return y
+
         if ax1 is not None and y_data_A is not None:
             if ax2 is None:
                 ax1.set_xlabel(f"Time ({time_unit})", color="white", fontsize=10, fontweight="bold")
             else:
                 ax1.set_xlabel("")
                 
-            y_plot_A = smooth_curve(y_data_A, win=7)
+            y_aligned_A = align_impulse(y_data_A, x_data, target_time=10.0)
+            y_plot_A = smooth_curve(y_aligned_A, win=7)
             ax1.plot(x_data, y_plot_A, color=colors[c_idx], linewidth=0.8)
             ax1.set_xlim(x_min, x_max)
             ax1.set_xticks(np.linspace(x_min, x_max, 11))
@@ -618,7 +641,8 @@ def build_waveform_ui(parent_frame, app):
             
         if ax2 is not None and y_data_B is not None:
             ax2.set_xlabel(f"Time ({time_unit})", color="white", fontsize=10, fontweight="bold")
-            y_plot_B = smooth_curve(y_data_B, win=7)
+            y_aligned_B = align_impulse(y_data_B, x_data, target_time=10.0)
+            y_plot_B = smooth_curve(y_aligned_B, win=7)
             ax2.plot(x_data, y_plot_B, color=colors[c_idx], linewidth=0.8)
             ax2.set_xlim(x_min, x_max)
             ax2.set_xticks(np.linspace(x_min, x_max, 11))
