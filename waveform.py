@@ -385,11 +385,11 @@ def build_waveform_ui(parent_frame, app):
         
     if ax1 is not None:
         setup_ax(ax1, "Channel 1 Waveform", f"CH1 {app.ch1_type}", "#32cd32")
-        ax1.plot([], [], color="#32cd32", linewidth=2)
+        ax1.plot([], [], color="#32cd32", linewidth=0.8)
             
     if ax2 is not None:
         setup_ax(ax2, "", f"CH2 {app.ch2_type}", "#00e5ff")
-        ax2.plot([], [], color="#00e5ff", linewidth=2)
+        ax2.plot([], [], color="#00e5ff", linewidth=0.8)
         ax2.set_xlabel("Time", color="white", fontsize=10, fontweight="bold")
         
     def apply_initial_limits(ax1, ax2):
@@ -597,7 +597,7 @@ def build_waveform_ui(parent_frame, app):
                 ax1.set_xlabel("")
                 
             y_plot_A = smooth_curve(y_data_A, win=7)
-            ax1.plot(x_data, y_plot_A, color=colors[c_idx], linewidth=1.5)
+            ax1.plot(x_data, y_plot_A, color=colors[c_idx], linewidth=0.8)
             ax1.set_xlim(x_min, x_max)
             ax1.set_xticks(np.linspace(x_min, x_max, 11))
             
@@ -619,7 +619,7 @@ def build_waveform_ui(parent_frame, app):
         if ax2 is not None and y_data_B is not None:
             ax2.set_xlabel(f"Time ({time_unit})", color="white", fontsize=10, fontweight="bold")
             y_plot_B = smooth_curve(y_data_B, win=7)
-            ax2.plot(x_data, y_plot_B, color=colors[c_idx], linewidth=1.5)
+            ax2.plot(x_data, y_plot_B, color=colors[c_idx], linewidth=0.8)
             ax2.set_xlim(x_min, x_max)
             ax2.set_xticks(np.linspace(x_min, x_max, 11))
             
