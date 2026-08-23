@@ -146,6 +146,54 @@ def build_waveform_ui(parent_frame, app):
 
     save_btn = tk.Button(top_bar, text="Save", bg="#4fc3f7", fg="black", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=open_save_dialog)
     save_btn.pack(side="left", padx=5, pady=5)
+
+    def open_parameters_dialog():
+        if not hasattr(app, 'latest_y_A') or app.latest_y_A is None:
+            messagebox.showwarning("No Data", "No waveform data has been captured yet.")
+            return
+
+        try:
+            from review import calculate_iec_parameters
+            y_raw = app.latest_y_A
+            x_sec = getattr(app, 'latest_x_sec', np.linspace(0, 100e-6, len(y_raw)))
+
+            p = calculate_iec_parameters(x_sec, y_raw)
+
+            param_win = tk.Toplevel(parent_frame)
+            param_win.title("IEC 60060-1 Calculated Parameters")
+            param_win.geometry("520x460")
+            param_win.configure(bg="#1e293b")
+            param_win.grab_set()
+
+            ch_name = "CH1 " + getattr(app, 'ch1_type', 'Voltage')
+            tk.Label(param_win, text=f"Calculated IEC Parameters ({ch_name})", bg="#1e293b", fg="#facc15", font=("Segoe UI", 12, "bold")).pack(pady=(15, 10))
+
+            card = tk.Frame(param_win, bg="#0f172a", bd=1, relief="solid")
+            card.pack(fill="both", expand=True, padx=20, pady=5)
+
+            unit_str = "kV" if getattr(app, 'ch1_type', 'Voltage') == 'Voltage' else "A"
+
+            params_list = [
+                ("Peak Value (Vp / Ip)", f"{p['v_peak']:.2f} {unit_str}"),
+                ("Front Time (T1)", f"{p['t1_us']:.2f} µs" if p['t1_us'] is not None else "--"),
+                ("Time to Half-Value (T2)", f"{p['t2_us']:.2f} µs" if p['t2_us'] is not None else "--"),
+                ("Virtual Origin (O1)", f"{p['o1_us']:.3f} µs" if p['o1_us'] is not None else "--"),
+                ("Overshoot Magnitude (Beta)", f"{p['beta_pct']:.2f} %"),
+                ("Oscillation Frequency (f)", f"{p['osc_freq_khz']:.2f} kHz")
+            ]
+
+            for label, val in params_list:
+                row = tk.Frame(card, bg="#0f172a")
+                row.pack(fill="x", padx=15, pady=6)
+                tk.Label(row, text=label, bg="#0f172a", fg="#94a3b8", font=("Segoe UI", 10, "bold"), anchor="w").pack(side="left")
+                tk.Label(row, text=val, bg="#0f172a", fg="#38bdf8", font=("Segoe UI", 11, "bold"), anchor="e").pack(side="right")
+
+            tk.Button(param_win, text="Close", bg="#3b82f6", fg="white", font=("Segoe UI", 10, "bold"), width=12, command=param_win.destroy).pack(pady=15)
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to calculate parameters:\n{e}")
+
+    param_btn = tk.Button(top_bar, text="Parameters", bg="#8b5cf6", fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=open_parameters_dialog)
+    param_btn.pack(side="left", padx=5, pady=5)
     
     def perform_exit():
         if hasattr(app, 'waveform_job') and app.waveform_job is not None:
@@ -554,6 +602,10 @@ def build_waveform_ui(parent_frame, app):
         start_time_ns = 0
         x_data_ns = start_time_ns + np.arange(noSamples) * tInt_ns
         x_data = x_data_ns / scale_to_ns
+
+        if y_data_A is not None:
+            app.latest_y_A = y_data_A
+            app.latest_x_sec = x_data_ns * 1e-9
         
         os.makedirs("captured_data", exist_ok=True)
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
