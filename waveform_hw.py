@@ -325,9 +325,20 @@ def fetch_hardware_data(app, config):
     
     ps.ps5000aGetValues(app.chandle, 0, ctypes.byref(cmaxSamples), 1, 0, 0, ctypes.byref(overflow))
     
+    ch1_type = getattr(app, 'ch1_type', 'Voltage')
+    ch2_type = getattr(app, 'ch2_type', 'Current')
+
+    c1_att = float(config.get('ch1_int', 1.0)) * float(config.get('ch1_ext', 1.0))
+    c2_att = float(config.get('ch2_int', 1.0)) * float(config.get('ch2_ext', 1.0))
+
     if ch1_active:
-        y_data_A = np.array(adc2mV(bufferAMax, r_enum_A, current_max_adc)) / 1000.0
+        v_raw_A = np.array(adc2mV(bufferAMax, r_enum_A, current_max_adc)) / 1000.0
+        v_actual_A = v_raw_A * c1_att
+        y_data_A = (v_actual_A / 1000.0) if ch1_type == 'Voltage' else v_actual_A
+
     if ch2_active:
-        y_data_B = np.array(adc2mV(bufferBMax, r_enum_B, current_max_adc)) / 1000.0
+        v_raw_B = np.array(adc2mV(bufferBMax, r_enum_B, current_max_adc)) / 1000.0
+        v_actual_B = v_raw_B * c2_att
+        y_data_B = (v_actual_B / 1000.0) if ch2_type == 'Voltage' else v_actual_B
         
     return y_data_A, y_data_B, tInt, pre_trig_samples, mx_mv_A, mx_mv_B, nSamp, t_str
