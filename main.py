@@ -1,5 +1,6 @@
 import ctypes
 import os
+import threading
 import tkinter as tk
 from tkinter import messagebox
 from tkinter import ttk
@@ -141,6 +142,9 @@ class PicoScopeApp:
         Actually checks if the physical hardware is connected by enumerating units,
         while suppressing the PicoScope splash screen using ctypes.
         """
+        if getattr(self, 'chandle', None) is not None and self.chandle != -1:
+            return True
+
         import threading
         import time
 
@@ -166,10 +170,6 @@ class PicoScopeApp:
                     time.sleep(0.005)
             except Exception:
                 pass
-
-    def try_connect_scope(self):
-        if getattr(self, 'chandle', None) is not None and self.chandle != -1:
-            return True
 
         threading.Thread(target=hide_splash, daemon=True).start()
 
