@@ -1,5 +1,5 @@
 Scope: ps5000a
 Serial no.: None
 Hardware resolution: 14BIT
-Pre-trigger [%]: 10
-Threshold [%]: 18
+Pre-trigger [%]: 20
+Threshold [%]: 20

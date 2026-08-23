@@ -507,8 +507,8 @@ def build_waveform_ui(parent_frame, app):
 
         try:
             time_str = config.get('time_str', '100 us')
-            volt_str_A = "10V"
-            volt_str_B = "10V"
+            volt_str_A = "1V"
+            volt_str_B = "1V"
             
             total_time_ns = parse_time_to_ns(time_str)
             max_mv_A = parse_volts_to_mv(volt_str_A)

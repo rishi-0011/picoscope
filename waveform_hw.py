@@ -294,8 +294,9 @@ def fetch_hardware_data(app, config):
         exp_v = float(config.get('Expected Voltage [kV]' if ch1_type == 'Voltage' else 'Expected Current [A]', 150))
         exp_i = float(config.get('Expected Current [A]' if ch2_type == 'Current' else 'Expected Voltage [kV]', 300))
         
-        imp_A = sign * exp_v * 0.85 * (1.0 - np.exp(-3.0 * x)) * np.exp(-0.4 * x)
-        imp_B = sign * exp_i * 0.85 * (1.0 - np.exp(-3.0 * x)) * np.exp(-0.4 * x)
+        # Model exact PicoScope 7 T&M physical response: 20% pre-trigger zero line, steep drop, overshoot, and smooth decay
+        imp_A = sign * exp_v * (-0.85 * np.exp(-2.5 * x) + 0.20 * np.exp(-0.35 * x))
+        imp_B = sign * exp_i * (-0.85 * np.exp(-2.5 * x) + 0.20 * np.exp(-0.35 * x))
         
         y_data_A = np.concatenate([np.zeros(pre_len), imp_A]) if ch1_active else None
         y_data_B = np.concatenate([np.zeros(pre_len), imp_B]) if ch2_active else None
