@@ -432,12 +432,12 @@ def build_waveform_ui(parent_frame, app):
         ax.grid(True, color="#555555", linestyle="--", linewidth=0.5)
         
     if ax1 is not None:
-        setup_ax(ax1, "Channel 1 Waveform", f"CH1 {app.ch1_type}", "#32cd32")
-        ax1.plot([], [], color="#32cd32", linewidth=0.8)
+        setup_ax(ax1, "Channel 1 Waveform", f"CH1 {app.ch1_type}", "#0033cc")
+        ax1.plot([], [], color="#0033cc", linewidth=1.2)
             
     if ax2 is not None:
         setup_ax(ax2, "", f"CH2 {app.ch2_type}", "#00e5ff")
-        ax2.plot([], [], color="#00e5ff", linewidth=0.8)
+        ax2.plot([], [], color="#00e5ff", linewidth=1.2)
         ax2.set_xlabel("Time", color="white", fontsize=10, fontweight="bold")
         
     def apply_initial_limits(ax1, ax2):
@@ -635,7 +635,7 @@ def build_waveform_ui(parent_frame, app):
         x_min = 0.0
         x_max = val  
         
-        colors = ["#32cd32", "#ff00ff", "#00ffff", "#ff9900", "#ff0000", "#ffff00", "#0000ff", "#8a2be2", "#ff1493", "#00ff7f"]
+        colors = ["#0033cc", "#00e5ff", "#ff00ff", "#ff9900", "#ff0000", "#ffff00", "#8a2be2", "#ff1493", "#00ff7f"]
         c_idx = (getattr(app, 'current_shot', 1) - 1) % len(colors)
         
         def smooth_curve(arr, win=7):
@@ -650,7 +650,8 @@ def build_waveform_ui(parent_frame, app):
                 
             app.latest_y_A = y_data_A
             y_plot_A = smooth_curve(y_data_A, win=7)
-            ax1.plot(x_data, y_plot_A, color=colors[c_idx], linewidth=0.8)
+            ax1.axhline(0, color="#666666", linestyle="--", linewidth=0.8, alpha=0.7)
+            ax1.plot(x_data, y_plot_A, color="#0033cc", linewidth=1.2)
             ax1.set_xlim(x_min, x_max)
             ax1.set_xticks(np.linspace(x_min, x_max, 11))
             
@@ -673,7 +674,8 @@ def build_waveform_ui(parent_frame, app):
             ax2.set_xlabel(f"Time ({time_unit})", color="white", fontsize=10, fontweight="bold")
             app.latest_y_B = y_data_B
             y_plot_B = smooth_curve(y_data_B, win=7)
-            ax2.plot(x_data, y_plot_B, color=colors[c_idx], linewidth=0.8)
+            ax2.axhline(0, color="#666666", linestyle="--", linewidth=0.8, alpha=0.7)
+            ax2.plot(x_data, y_plot_B, color="#00e5ff", linewidth=1.2)
             ax2.set_xlim(x_min, x_max)
             ax2.set_xticks(np.linspace(x_min, x_max, 11))
             
