@@ -312,7 +312,13 @@ def build_review_ui(parent_frame, app=None):
     main_split = tk.Frame(content_frame, bg=bg_color)
     main_split.grid(row=1, column=0, sticky="nsew")
 
-    # Left Container (Sub-tabs + Plots)
+    # Right Control Sidebar (Packed FIRST so it reserves right margin space!)
+    sidebar = tk.Frame(main_split, bg="#8c97a8", bd=2, relief="groove", width=160, padx=4, pady=4)
+    sidebar.pack(side="right", fill="y")
+    sidebar.pack_propagate(False)
+    sidebar.columnconfigure(0, weight=1)
+
+    # Left Container (Sub-tabs + Plots - packed SECOND to fill remaining space!)
     left_container = tk.Frame(main_split, bg=bg_color)
     left_container.pack(side="left", fill="both", expand=True, padx=(0, 10))
     left_container.columnconfigure(0, weight=1)
@@ -631,10 +637,6 @@ def parse_file_waveform(file_path):
     # ----------------------------------------------------
     # Right Control Sidebar (Review Ch1 & Review Ch2 controls)
     # ----------------------------------------------------
-    sidebar = tk.Frame(main_split, bg="#8c97a8", bd=2, relief="groove", width=160, padx=4, pady=4)
-    sidebar.pack(side="right", fill="y")
-    sidebar.pack_propagate(False)
-    sidebar.columnconfigure(0, weight=1)
 
     # --- SECTION 1: Review Ch1 ---
     ch1_sec = tk.Frame(sidebar, bg="#8c97a8")
