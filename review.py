@@ -313,9 +313,8 @@ def build_review_ui(parent_frame, app=None):
     main_split.grid(row=1, column=0, sticky="nsew")
 
     # Right Control Sidebar (Packed FIRST so it reserves right margin space!)
-    sidebar = tk.Frame(main_split, bg="#8c97a8", bd=2, relief="groove", width=160, padx=4, pady=4)
-    sidebar.pack(side="right", fill="y")
-    sidebar.pack_propagate(False)
+    sidebar = tk.Frame(main_split, bg="#8c97a8", bd=2, relief="groove", width=175, padx=4, pady=4)
+    sidebar.pack(side="right", fill="y", padx=(5, 0))
     sidebar.columnconfigure(0, weight=1)
 
     # Left Container (Sub-tabs + Plots - packed SECOND to fill remaining space!)
