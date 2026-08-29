@@ -481,7 +481,6 @@ def parse_file_waveform(file_path):
 
     raise ValueError("No valid text or binary numeric data rows found in file.")
 
-def build_review_ui(parent_frame, app=None):
 
     def load_channel_file(ch_key):
         file_path = filedialog.askopenfilename(
