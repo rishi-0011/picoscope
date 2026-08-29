@@ -447,7 +447,28 @@ def build_review_ui(parent_frame, app=None):
             return
 
         try:
-            raw_data = np.loadtxt(file_path)
+            lines = []
+            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                lines = f.readlines()
+            
+            data_rows = []
+            for line in lines:
+                line = line.strip()
+                if not line or line.startswith('#') or line.startswith('Time') or line.startswith('CH'):
+                    continue
+                parts = line.replace(',', '\t').replace(';', '\t').split()
+                if len(parts) >= 2:
+                    try:
+                        t_val = float(parts[0])
+                        v_val = float(parts[1])
+                        data_rows.append([t_val, v_val])
+                    except ValueError:
+                        continue
+            
+            if not data_rows:
+                raise ValueError("No valid numeric data rows found in file.")
+                
+            raw_data = np.array(data_rows)
             time_arr = raw_data[:, 0]
             volt_arr = raw_data[:, 1]
 
