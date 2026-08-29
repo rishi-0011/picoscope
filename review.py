@@ -311,13 +311,13 @@ def build_review_ui(parent_frame, app=None):
     # ----------------------------------------------------
     main_split = tk.Frame(content_frame, bg=bg_color)
     main_split.grid(row=1, column=0, sticky="nsew")
-    main_split.columnconfigure(0, weight=4)
-    main_split.columnconfigure(1, weight=1)
+    main_split.columnconfigure(0, weight=1)
+    main_split.columnconfigure(1, weight=0)
     main_split.rowconfigure(0, weight=1)
 
     # Left Container (Sub-tabs + Plots)
     left_container = tk.Frame(main_split, bg=bg_color)
-    left_container.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+    left_container.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
     left_container.columnconfigure(0, weight=1)
     left_container.rowconfigure(1, weight=1)
 
@@ -435,53 +435,9 @@ def build_review_ui(parent_frame, app=None):
     btn_ch1.config(command=lambda: set_subtab("Channel 1"))
     btn_ch2.config(command=lambda: set_subtab("Channel 2"))
 
-def parse_file_waveform(file_path):
-    try:
-        with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-            lines = f.readlines()
-        data_rows = []
-        for line in lines:
-            line = line.strip()
-            if not line or line.startswith('#') or line.startswith('Time') or line.startswith('CH'):
-                continue
-            parts = line.replace(',', '\t').replace(';', '\t').split()
-            if len(parts) >= 2:
-                try:
-                    t_val = float(parts[0])
-                    v_val = float(parts[1])
-                    data_rows.append([t_val, v_val])
-                except ValueError:
-                    continue
-        if len(data_rows) > 10:
-            raw_data = np.array(data_rows)
-            return raw_data[:, 0], raw_data[:, 1]
-    except Exception:
-        pass
-
-    try:
-        with open(file_path, 'rb') as f:
-            b_data = f.read()
-        for offset in [70, 82, 0, 64, 128]:
-            for fmt in ['>i2', '<i2', '>f4', '<f4', '>f8', '<f8']:
-                try:
-                    elem_size = 2 if '2' in fmt else (4 if '4' in fmt else 8)
-                    n = (len(b_data) - offset) // elem_size
-                    if n < 100: continue
-                    raw_v = np.frombuffer(b_data[offset:offset+n*elem_size], dtype=fmt)
-                    if not np.any(np.isnan(raw_v)) and not np.any(np.isinf(raw_v)):
-                        if np.std(raw_v) > 0.01:
-                            if np.max(np.abs(raw_v)) > 1000:
-                                raw_v = (raw_v / 32768.0) * 100.0
-                            t_axis = np.linspace(0, 100e-6, len(raw_v))
-                            return t_axis, raw_v
-                except Exception:
-                    pass
-    except Exception:
-        pass
-
-    raise ValueError("No valid text or binary numeric data rows found in file.")
-
-
+    # ----------------------------------------------------
+    # Action Functions
+    # ----------------------------------------------------
     def load_channel_file(ch_key):
         file_path = filedialog.askopenfilename(
             title=f"Select Waveform Data for {ch_key}",
@@ -491,7 +447,55 @@ def parse_file_waveform(file_path):
             return
 
         try:
-            time_arr, volt_arr = parse_file_waveform(file_path)
+            time_arr, volt_arr = None, None
+            try:
+                lines = []
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    lines = f.readlines()
+                data_rows = []
+                for line in lines:
+                    line = line.strip()
+                    if not line or line.startswith('#') or line.startswith('Time') or line.startswith('CH'):
+                        continue
+                    parts = line.replace(',', '\t').replace(';', '\t').split()
+                    if len(parts) >= 2:
+                        try:
+                            data_rows.append([float(parts[0]), float(parts[1])])
+                        except ValueError:
+                            continue
+                if len(data_rows) > 10:
+                    raw_data = np.array(data_rows)
+                    time_arr = raw_data[:, 0]
+                    volt_arr = raw_data[:, 1]
+            except Exception:
+                pass
+
+            if time_arr is None or volt_arr is None:
+                try:
+                    with open(file_path, 'rb') as f:
+                        b_data = f.read()
+                    for offset in [70, 82, 0, 64, 128]:
+                        for fmt in ['>i2', '<i2', '>f4', '<f4', '>f8', '<f8']:
+                            try:
+                                elem_size = 2 if '2' in fmt else (4 if '4' in fmt else 8)
+                                n = (len(b_data) - offset) // elem_size
+                                if n < 100: continue
+                                raw_v = np.frombuffer(b_data[offset:offset+n*elem_size], dtype=fmt)
+                                if not np.any(np.isnan(raw_v)) and not np.any(np.isinf(raw_v)):
+                                    if np.std(raw_v) > 0.01:
+                                        if np.max(np.abs(raw_v)) > 1000:
+                                            raw_v = (raw_v / 32768.0) * 100.0
+                                        time_arr = np.linspace(0, 100e-6, len(raw_v))
+                                        volt_arr = raw_v
+                                        break
+                            except Exception:
+                                pass
+                        if time_arr is not None: break
+                except Exception:
+                    pass
+
+            if time_arr is None or volt_arr is None:
+                raise ValueError("No valid numeric data rows found in file.")
 
             calc_res = calculate_iec_parameters(time_arr, volt_arr)
             calc_res['filename'] = file_path
@@ -634,8 +638,9 @@ def parse_file_waveform(file_path):
     # ----------------------------------------------------
     # Right Control Sidebar (Review Ch1 & Review Ch2 controls)
     # ----------------------------------------------------
-    sidebar = tk.Frame(main_split, bg="#8c97a8", bd=2, relief="groove", width=170, padx=4, pady=4)
-    sidebar.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+    sidebar = tk.Frame(main_split, bg="#8c97a8", bd=2, relief="groove", width=150, padx=2, pady=2)
+    sidebar.grid(row=0, column=1, sticky="ns")
+    sidebar.grid_propagate(False)
     sidebar.columnconfigure(0, weight=1)
 
     # --- SECTION 1: Review Ch1 ---
