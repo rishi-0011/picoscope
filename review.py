@@ -38,7 +38,9 @@ def calculate_iec_parameters(time, raw_voltage):
 
     def _double_exp(tt, A, alpha, beta_p, t0):
         tau = np.clip(tt - t0, 0, None)
-        return A * (np.exp(-alpha * tau) - np.exp(-beta_p * tau))
+        exp1 = np.exp(np.clip(-alpha * tau, -700, 700))
+        exp2 = np.exp(np.clip(-beta_p * tau, -700, 700))
+        return A * (exp1 - exp2)
 
     # Front Timing (T1, O1)
     front_t, front_v = t[: idx_peak + 1], v[: idx_peak + 1]
