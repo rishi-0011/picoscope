@@ -193,30 +193,54 @@ class IECAnalyzerApp(tk.Tk):
 
     def process_data(self, file_path):
         try:
-            lines = []
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                lines = f.readlines()
-            
-            data_rows = []
-            for line in lines:
-                line = line.strip()
-                if not line or line.startswith('#') or line.startswith('Time') or line.startswith('CH'):
-                    continue
-                parts = line.replace(',', '\t').replace(';', '\t').split()
-                if len(parts) >= 2:
-                    try:
-                        t_val = float(parts[0])
-                        v_val = float(parts[1])
-                        data_rows.append([t_val, v_val])
-                    except ValueError:
+            time, raw_voltage = None, None
+            try:
+                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                    lines = f.readlines()
+                data_rows = []
+                for line in lines:
+                    line = line.strip()
+                    if not line or line.startswith('#') or line.startswith('Time') or line.startswith('CH'):
                         continue
-            
-            if not data_rows:
-                raise ValueError("No valid numeric data rows found in file.")
-                
-            raw_data = np.array(data_rows)
-            time = raw_data[:, 0]
-            raw_voltage = raw_data[:, 1]
+                    parts = line.replace(',', '\t').replace(';', '\t').split()
+                    if len(parts) >= 2:
+                        try:
+                            data_rows.append([float(parts[0]), float(parts[1])])
+                        except ValueError:
+                            continue
+                if len(data_rows) > 10:
+                    raw_data = np.array(data_rows)
+                    time = raw_data[:, 0]
+                    raw_voltage = raw_data[:, 1]
+            except Exception:
+                pass
+
+            if time is None or raw_voltage is None:
+                try:
+                    with open(file_path, 'rb') as f:
+                        b_data = f.read()
+                    for offset in [70, 82, 0, 64, 128]:
+                        for fmt in ['>i2', '<i2', '>f4', '<f4', '>f8', '<f8']:
+                            try:
+                                elem_size = 2 if '2' in fmt else (4 if '4' in fmt else 8)
+                                n = (len(b_data) - offset) // elem_size
+                                if n < 100: continue
+                                raw_v = np.frombuffer(b_data[offset:offset+n*elem_size], dtype=fmt)
+                                if not np.any(np.isnan(raw_v)) and not np.any(np.isinf(raw_v)):
+                                    if np.std(raw_v) > 0.01:
+                                        if np.max(np.abs(raw_v)) > 1000:
+                                            raw_v = (raw_v / 32768.0) * 100.0
+                                        time = np.linspace(0, 100e-6, len(raw_v))
+                                        raw_voltage = raw_v
+                                        break
+                            except Exception:
+                                pass
+                        if time is not None: break
+                except Exception:
+                    pass
+
+            if time is None or raw_voltage is None:
+                raise ValueError("No valid text or binary numeric data rows found in file.")
         except Exception as e:
             messagebox.showerror("Error", f"Could not load file:\n{e}")
             return
