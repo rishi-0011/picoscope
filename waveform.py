@@ -77,12 +77,16 @@ def build_waveform_ui(parent_frame, app):
         save_win.configure(bg="#2b2b2b")
         save_win.grab_set()
 
+        capture_default_dir = os.path.join(os.getcwd(), "Capture Data")
+        if not os.path.exists(capture_default_dir):
+            os.makedirs(capture_default_dir)
+
         tk.Label(save_win, text="Selected folder path", bg="#2b2b2b", fg="white", font=("Segoe UI", 10)).pack(anchor="w", padx=15, pady=(15, 5))
-        path_var = tk.StringVar(value=r"C:\Users\MaharshiM\Documents\Waveforms")
+        path_var = tk.StringVar(value=capture_default_dir)
         tk.Entry(save_win, textvariable=path_var, bg="#1e1e1e", fg="white", insertbackground="white", font=("Segoe UI", 10)).pack(fill="x", padx=15, pady=(0, 10))
 
         tk.Label(save_win, text="File name", bg="#2b2b2b", fg="white", font=("Segoe UI", 10)).pack(anchor="w", padx=15, pady=(5, 5))
-        default_name = datetime.datetime.now().strftime("%Y%m%d")
+        default_name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         name_var = tk.StringVar(value=default_name)
         tk.Entry(save_win, textvariable=name_var, bg="#1e1e1e", fg="white", insertbackground="white", font=("Segoe UI", 10)).pack(fill="x", padx=15, pady=(0, 10))
 
@@ -138,11 +142,59 @@ def build_waveform_ui(parent_frame, app):
                     writer.writerow(row)
                     
             save_win.destroy()
+            messagebox.showinfo("Saved", f"Successfully saved captured waveform to:\n{filepath}")
 
         btn_frame = tk.Frame(save_win, bg="#2b2b2b")
         btn_frame.pack(fill="x", side="bottom", pady=15)
         tk.Button(btn_frame, text="Save", bg="#32cd32", fg="black", font=("Segoe UI", 10, "bold"), width=12, command=perform_save).pack(side="left", padx=15)
         tk.Button(btn_frame, text="Cancel", bg="#555555", fg="white", font=("Segoe UI", 10, "bold"), width=12, command=save_win.destroy).pack(side="right", padx=15)
+
+    def save_captured_waveform_direct():
+        import csv
+        x_data = getattr(app, 'current_x_data', None)
+        y_A = getattr(app, 'current_y_data_A', None)
+        y_B = getattr(app, 'current_y_data_B', None)
+        time_unit = getattr(app, 'current_time_unit', 'ms')
+
+        if x_data is None or (y_A is None and y_B is None):
+            messagebox.showwarning("No Data", "No captured waveform data available to save.")
+            return
+
+        capture_folder = os.path.join(os.getcwd(), "Capture Data")
+        if not os.path.exists(capture_folder):
+            os.makedirs(capture_folder)
+
+        shot_num = getattr(app, 'current_shot', 1)
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"Waveform_Shot{shot_num}_{timestamp}.csv"
+        filepath = os.path.join(capture_folder, filename)
+
+        with open(filepath, 'w', newline='') as f:
+            writer = csv.writer(f)
+            headers1 = ["Time"]
+            headers2 = [f"({time_unit})"]
+            
+            has_A = y_A is not None
+            has_B = y_B is not None
+            
+            if has_A:
+                headers1.append("Channel A")
+                headers2.append("(V)")
+            if has_B:
+                headers1.append("Channel B")
+                headers2.append("(V)")
+                
+            writer.writerow(headers1)
+            writer.writerow(headers2)
+            writer.writerow([])
+            
+            for i in range(len(x_data)):
+                row = [f"{x_data[i]:.8f}"]
+                if has_A: row.append(f"{y_A[i]:.8f}")
+                if has_B: row.append(f"{y_B[i]:.8f}")
+                writer.writerow(row)
+
+        messagebox.showinfo("Saved", f"Successfully saved captured waveform to:\n{filepath}")
 
     save_btn = tk.Button(top_bar, text="Save", bg="#4fc3f7", fg="black", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=open_save_dialog)
     save_btn.pack(side="left", padx=5, pady=5)
@@ -369,7 +421,7 @@ def build_waveform_ui(parent_frame, app):
     lbl_waiting.pack(side="top", pady=(5, 0))
     app.lbl_waiting = lbl_waiting
 
-    btn_save_wave = tk.Button(progress_frame, text="Save Wave", bg="#4fc3f7", fg="black", font=("Segoe UI", 10, "bold"), relief="raised", bd=2, cursor="hand2", command=open_save_dialog)
+    btn_save_wave = tk.Button(progress_frame, text="Save Wave", bg="#4fc3f7", fg="black", font=("Segoe UI", 10, "bold"), relief="raised", bd=2, cursor="hand2", command=save_captured_waveform_direct)
     btn_save_wave.pack(side="top", fill="x", pady=(10, 0))
 
     app._blink_state = True
