@@ -369,6 +369,9 @@ def build_waveform_ui(parent_frame, app):
     lbl_waiting.pack(side="top", pady=(5, 0))
     app.lbl_waiting = lbl_waiting
 
+    btn_save_wave = tk.Button(progress_frame, text="Save Wave", bg="#4fc3f7", fg="black", font=("Segoe UI", 10, "bold"), relief="raised", bd=2, cursor="hand2", command=open_save_dialog)
+    btn_save_wave.pack(side="top", fill="x", pady=(10, 0))
+
     app._blink_state = True
     app._blink_base_color = "#000000"
 
