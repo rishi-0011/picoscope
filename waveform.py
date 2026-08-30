@@ -91,56 +91,75 @@ def build_waveform_ui(parent_frame, app):
         tk.Entry(save_win, textvariable=name_var, bg="#1e1e1e", fg="white", insertbackground="white", font=("Segoe UI", 10)).pack(fill="x", padx=15, pady=(0, 10))
 
         tk.Label(save_win, text="File type", bg="#2b2b2b", fg="white", font=("Segoe UI", 10)).pack(anchor="w", padx=15, pady=(5, 5))
-        type_var = tk.StringVar(value="CSV file")
-        cb = ttk.Combobox(save_win, textvariable=type_var, values=["CSV file"], state="readonly", font=("Segoe UI", 10))
+        type_var = tk.StringVar(value="CSV file (.csv)")
+        cb = ttk.Combobox(save_win, textvariable=type_var, values=["CSV file (.csv)", "TXT file (.txt)", "DAT file (.dat)"], state="readonly", font=("Segoe UI", 10))
         cb.pack(fill="x", padx=15, pady=(0, 20))
 
         def perform_save():
             import csv
             folder = path_var.get()
-            name = name_var.get()
-            
+            name = name_var.get().strip()
+            selected_type = type_var.get()
+
+            if not name:
+                name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            if "DAT" in selected_type or name.endswith(".dat"):
+                ext = ".dat"
+            elif "TXT" in selected_type or name.endswith(".txt"):
+                ext = ".txt"
+            else:
+                ext = ".csv"
+
+            if name.endswith(".csv") or name.endswith(".txt") or name.endswith(".dat"):
+                base_name = os.path.splitext(name)[0]
+            else:
+                base_name = name
+
             if not os.path.exists(folder):
                 os.makedirs(folder)
-            
-            filepath = os.path.join(folder, f"{name}.csv")
-            
+
+            filepath = os.path.join(folder, f"{base_name}{ext}")
+
             x_data = getattr(app, 'current_x_data', None)
             y_A = getattr(app, 'current_y_data_A', None)
             y_B = getattr(app, 'current_y_data_B', None)
             time_unit = getattr(app, 'current_time_unit', 'ms')
 
             if x_data is None:
+                messagebox.showwarning("No Data", "No waveform data to save.")
                 save_win.destroy()
                 return
 
-            with open(filepath, 'w', newline='') as f:
-                writer = csv.writer(f)
-                headers1 = ["Time"]
-                headers2 = [f"({time_unit})"]
-                
-                has_A = y_A is not None
-                has_B = y_B is not None
-                
-                if has_A:
-                    headers1.append("Channel A")
-                    headers2.append("(V)")
-                if has_B:
-                    headers1.append("Channel B")
-                    headers2.append("(V)")
-                    
-                writer.writerow(headers1)
-                writer.writerow(headers2)
-                writer.writerow([])
-                
-                for i in range(len(x_data)):
-                    row = [f"{x_data[i]:.8f}"]
+            has_A = y_A is not None
+            has_B = y_B is not None
+
+            if ext == ".csv":
+                with open(filepath, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    headers1 = ["Time"]
+                    headers2 = [f"({time_unit})"]
                     if has_A:
-                        row.append(f"{y_A[i]:.8f}")
+                        headers1.append("Channel A"); headers2.append("(V)")
                     if has_B:
-                        row.append(f"{y_B[i]:.8f}")
-                    writer.writerow(row)
-                    
+                        headers1.append("Channel B"); headers2.append("(V)")
+                    writer.writerow(headers1)
+                    writer.writerow(headers2)
+                    writer.writerow([])
+                    for i in range(len(x_data)):
+                        row = [f"{x_data[i]:.8f}"]
+                        if has_A: row.append(f"{y_A[i]:.8f}")
+                        if has_B: row.append(f"{y_B[i]:.8f}")
+                        writer.writerow(row)
+            else:
+                with open(filepath, 'w', encoding='utf-8') as f:
+                    f.write(f"Time[{time_unit}]\tCH1_Voltage\tCH2_Current\n")
+                    for i in range(len(x_data)):
+                        t_val = x_data[i]
+                        v1_val = y_A[i] if has_A else 0.0
+                        v2_val = y_B[i] if has_B else 0.0
+                        f.write(f"{t_val:.8e}\t{v1_val:.8e}\t{v2_val:.8e}\n")
+
             save_win.destroy()
             messagebox.showinfo("Saved", f"Successfully saved captured waveform to:\n{filepath}")
 
@@ -421,7 +440,7 @@ def build_waveform_ui(parent_frame, app):
     lbl_waiting.pack(side="top", pady=(5, 0))
     app.lbl_waiting = lbl_waiting
 
-    btn_save_wave = tk.Button(progress_frame, text="Save Wave", bg="#4fc3f7", fg="black", font=("Segoe UI", 10, "bold"), relief="raised", bd=2, cursor="hand2", command=save_captured_waveform_direct)
+    btn_save_wave = tk.Button(progress_frame, text="Save Wave", bg="#4fc3f7", fg="black", font=("Segoe UI", 10, "bold"), relief="raised", bd=2, cursor="hand2", command=open_save_dialog)
     btn_save_wave.pack(side="top", fill="x", pady=(10, 0))
 
     app._blink_state = True
