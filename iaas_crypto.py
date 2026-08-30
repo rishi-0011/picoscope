@@ -2,10 +2,14 @@ import struct
 import json
 import hashlib
 import os
+import base64
 import numpy as np
 
 IAAS_MAGIC = b"IAAS_DAT_V1\x00"  # 12 bytes proprietary magic header
 SECRET_KEY_SEED = b"IAAS_CORONA_POWER_PROPRIETARY_KEY_2026_HV_IMPULSE"
+
+HEADER_TAG = "-----BEGIN IAAS ENCRYPTED DAT WAVEFORM-----\n"
+FOOTER_TAG = "-----END IAAS ENCRYPTED DAT WAVEFORM-----\n"
 
 def _derive_keystream(salt: bytes, length: int) -> bytes:
     """Derive deterministic keystream using SHA-256 counter mode for secure stream encryption."""
@@ -20,7 +24,7 @@ def _derive_keystream(salt: bytes, length: int) -> bytes:
 def encrypt_iaas_dat(x_data, y_A, y_B=None, time_unit="us"):
     """
     Encrypts raw numpy waveform arrays into proprietary IAAS encrypted DAT format.
-    Output file starts with magic header 'IAAS_DAT_V1\x00' followed by encrypted binary payload.
+    Formats payload as line-broken Base64 text so Windows Notepad opens instantly without freezing.
     """
     salt = os.urandom(16)  # 16-byte random salt
     
@@ -46,19 +50,41 @@ def encrypt_iaas_dat(x_data, y_A, y_B=None, time_unit="us"):
     keystream = _derive_keystream(salt, len(plain_bytes))
     
     cipher_bytes = bytes(p ^ k for p, k in zip(plain_bytes, keystream))
+    raw_encrypted = IAAS_MAGIC + salt + cipher_bytes
     
-    return IAAS_MAGIC + salt + cipher_bytes
+    # Base64 encode and wrap in clean 76-char lines for Notepad instant loading
+    b64_str = base64.b64encode(raw_encrypted).decode('ascii')
+    wrapped_lines = [b64_str[i:i+76] for i in range(0, len(b64_str), 76)]
+    
+    formatted_text = HEADER_TAG + "\n".join(wrapped_lines) + "\n" + FOOTER_TAG
+    return formatted_text.encode('utf-8')
 
 def decrypt_iaas_dat(b_data):
     """
-    Decrypts proprietary IAAS DAT binary file bytes back into x_data, y_A, y_B, time_unit.
-    Raises ValueError if magic header or key verification fails.
+    Decrypts proprietary IAAS DAT binary or Base64 file bytes back into x_data, y_A, y_B, time_unit.
+    Supports both raw binary and Base64-wrapped DAT files.
     """
-    if not b_data.startswith(IAAS_MAGIC):
+    if isinstance(b_data, str):
+        b_data = b_data.encode('utf-8', errors='ignore')
+
+    raw_bytes = None
+    if b_data.startswith(IAAS_MAGIC):
+        raw_bytes = b_data
+    else:
+        # Try decoding Notepad Base64 text format
+        try:
+            text = b_data.decode('utf-8', errors='ignore')
+            lines = [line.strip() for line in text.splitlines() if line.strip() and not line.startswith("---")]
+            clean_b64 = "".join(lines)
+            raw_bytes = base64.b64decode(clean_b64)
+        except Exception:
+            pass
+
+    if not raw_bytes or not raw_bytes.startswith(IAAS_MAGIC):
         raise ValueError("Invalid or corrupted IAAS DAT file. Only authorized IAAS software can decrypt this file.")
         
-    salt = b_data[12:28]
-    cipher_bytes = b_data[28:]
+    salt = raw_bytes[12:28]
+    cipher_bytes = raw_bytes[28:]
     
     keystream = _derive_keystream(salt, len(cipher_bytes))
     plain_bytes = bytes(c ^ k for c, k in zip(cipher_bytes, keystream))
