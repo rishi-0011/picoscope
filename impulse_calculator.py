@@ -194,26 +194,41 @@ class IECAnalyzerApp(tk.Tk):
     def process_data(self, file_path):
         try:
             time, raw_voltage = None, None
+            
+            # Step 1: Proprietary IAAS DAT File Decryption
             try:
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    lines = f.readlines()
-                data_rows = []
-                for line in lines:
-                    line = line.strip()
-                    if not line or line.startswith('#') or line.startswith('Time') or line.startswith('CH'):
-                        continue
-                    parts = line.replace(',', '\t').replace(';', '\t').split()
-                    if len(parts) >= 2:
-                        try:
-                            data_rows.append([float(parts[0]), float(parts[1])])
-                        except ValueError:
-                            continue
-                if len(data_rows) > 10:
-                    raw_data = np.array(data_rows)
-                    time = raw_data[:, 0]
-                    raw_voltage = raw_data[:, 1]
+                with open(file_path, 'rb') as f:
+                    b_data = f.read()
+                if b_data.startswith(b"IAAS_DAT_V1\x00"):
+                    from iaas_crypto import decrypt_iaas_dat
+                    x_dec, y_A_dec, y_B_dec, _ = decrypt_iaas_dat(b_data)
+                    time = x_dec
+                    raw_voltage = y_A_dec
             except Exception:
                 pass
+
+            # Step 2: Plain Text File Parsing (.csv, .txt)
+            if time is None or raw_voltage is None:
+                try:
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        lines = f.readlines()
+                    data_rows = []
+                    for line in lines:
+                        line = line.strip()
+                        if not line or line.startswith('#') or line.startswith('Time') or line.startswith('CH'):
+                            continue
+                        parts = line.replace(',', '\t').replace(';', '\t').split()
+                        if len(parts) >= 2:
+                            try:
+                                data_rows.append([float(parts[0]), float(parts[1])])
+                            except ValueError:
+                                continue
+                    if len(data_rows) > 10:
+                        raw_data = np.array(data_rows)
+                        time = raw_data[:, 0]
+                        raw_voltage = raw_data[:, 1]
+                except Exception:
+                    pass
 
             if time is None or raw_voltage is None:
                 try:

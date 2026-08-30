@@ -134,7 +134,12 @@ def build_waveform_ui(parent_frame, app):
             has_A = y_A is not None
             has_B = y_B is not None
 
-            if ext == ".csv":
+            if ext == ".dat":
+                from iaas_crypto import encrypt_iaas_dat
+                encrypted_bytes = encrypt_iaas_dat(x_data, y_A, y_B, time_unit)
+                with open(filepath, 'wb') as f:
+                    f.write(encrypted_bytes)
+            elif ext == ".csv":
                 with open(filepath, 'w', newline='', encoding='utf-8') as f:
                     writer = csv.writer(f)
                     headers1 = ["Time"]

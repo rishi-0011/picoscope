@@ -450,27 +450,42 @@ def build_review_ui(parent_frame, app=None):
 
         try:
             time_arr, volt_arr = None, None
+            
+            # Step 1: Proprietary IAAS DAT File Decryption
             try:
-                lines = []
-                with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    lines = f.readlines()
-                data_rows = []
-                for line in lines:
-                    line = line.strip()
-                    if not line or line.startswith('#') or line.startswith('Time') or line.startswith('CH'):
-                        continue
-                    parts = line.replace(',', '\t').replace(';', '\t').split()
-                    if len(parts) >= 2:
-                        try:
-                            data_rows.append([float(parts[0]), float(parts[1])])
-                        except ValueError:
-                            continue
-                if len(data_rows) > 10:
-                    raw_data = np.array(data_rows)
-                    time_arr = raw_data[:, 0]
-                    volt_arr = raw_data[:, 1]
+                with open(file_path, 'rb') as f:
+                    b_data = f.read()
+                if b_data.startswith(b"IAAS_DAT_V1\x00"):
+                    from iaas_crypto import decrypt_iaas_dat
+                    x_dec, y_A_dec, y_B_dec, _ = decrypt_iaas_dat(b_data)
+                    time_arr = x_dec
+                    volt_arr = y_A_dec if ch_key == "Ch1" else (y_B_dec if y_B_dec is not None else y_A_dec)
             except Exception:
                 pass
+
+            # Step 2: Plain Text File Parsing (.csv, .txt)
+            if time_arr is None or volt_arr is None:
+                try:
+                    lines = []
+                    with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
+                        lines = f.readlines()
+                    data_rows = []
+                    for line in lines:
+                        line = line.strip()
+                        if not line or line.startswith('#') or line.startswith('Time') or line.startswith('CH'):
+                            continue
+                        parts = line.replace(',', '\t').replace(';', '\t').split()
+                        if len(parts) >= 2:
+                            try:
+                                data_rows.append([float(parts[0]), float(parts[1])])
+                            except ValueError:
+                                continue
+                    if len(data_rows) > 10:
+                        raw_data = np.array(data_rows)
+                        time_arr = raw_data[:, 0]
+                        volt_arr = raw_data[:, 1]
+                except Exception:
+                    pass
 
             if time_arr is None or volt_arr is None:
                 try:
