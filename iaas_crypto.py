@@ -3,10 +3,11 @@ import json
 import hashlib
 import os
 import base64
+import datetime
 import numpy as np
 
 IAAS_MAGIC_ENC = b"IAAS_DAT_V1\x00"  # 12 bytes proprietary magic header for encrypted DAT
-IAAS_MAGIC_BIN = b"IAAS"             # 4 bytes magic header for standard 70-byte binary DAT
+IAAS_MAGIC_BIN = b"IAAS"             # 4 bytes magic header for standard binary DAT
 SECRET_KEY_SEED = b"IAAS_CORONA_POWER_PROPRIETARY_KEY_2026_HV_IMPULSE"
 
 HEADER_TAG = "-----BEGIN IAAS ENCRYPTED DAT WAVEFORM-----\n"
@@ -24,54 +25,38 @@ def _derive_keystream(salt: bytes, length: int) -> bytes:
 
 def pack_binary_dat(x_data, y_A, y_B=None, time_unit="us"):
     """
-    Packs raw waveform data into industrial 70-byte header + binary int16 sample payload DAT format.
-    Header Size: 70 bytes (Magic, Version, SampleCount, dt, t_start, Scale_A, Scale_B, Flags).
-    Payload: Sequentially packed int16 ADC samples.
+    Packs raw waveform data matching FCHW1-ch1_V-n 1.dat binary format.
+    - Header: Magic (4 bytes), Version (2 bytes), Sample Count N (uint32), dt (float64), t_start (float64).
+    - Data Body: Packed 64-bit IEEE-754 double-precision floats (float64).
+    - Footer Metadata: Channel labels 'Voltage[kV]', 'Time [s]', and Timestamp.
     """
     n_samples = len(x_data)
     dt = (x_data[-1] - x_data[0]) / (n_samples - 1) if n_samples > 1 else 1e-6
     t_start = x_data[0]
     
-    max_A = np.max(np.abs(y_A)) if (y_A is not None and len(y_A) > 0) else 1.0
-    if max_A == 0: max_A = 1.0
-    scale_A = max_A / 32767.0
+    header = struct.pack('>4sHIdd', IAAS_MAGIC_BIN, 1, n_samples, dt, t_start)
     
-    has_B = y_B is not None and len(y_B) > 0
-    if has_B:
-        max_B = np.max(np.abs(y_B))
-        if max_B == 0: max_B = 1.0
-        scale_B = max_B / 32767.0
-    else:
-        scale_B = 1.0
+    body_A = y_A.astype(np.float64).tobytes() if y_A is not None else b""
+    body_B = y_B.astype(np.float64).tobytes() if y_B is not None else b""
+    
+    timestamp_str = datetime.datetime.now().strftime("%d  %b  %Y  %H:%M")
+    ch_label = "Voltage[kV]" if time_unit == "us" else "Current[A]"
+    time_label = f"Time [{time_unit}]"
+    
+    footer_buf = bytearray()
+    for lbl in [ch_label, time_label, timestamp_str]:
+        b_lbl = lbl.encode('ascii')
+        footer_buf.extend(struct.pack('>I', len(b_lbl)))
+        footer_buf.extend(b_lbl)
         
-    unit_flag = 0 if time_unit == "us" else (1 if time_unit == "ms" else 2)
-    
-    header = struct.pack('>4sHIddddBBB25s',
-        IAAS_MAGIC_BIN, 1, n_samples, dt, t_start, scale_A, scale_B,
-        1 if y_A is not None else 0,
-        1 if has_B else 0,
-        unit_flag,
-        b'\x00' * 25
-    )
-    
-    int_A = (y_A / scale_A).astype(np.int16)
-    if has_B:
-        int_B = (y_B / scale_B).astype(np.int16)
-        interleaved = np.empty((n_samples * 2,), dtype=np.int16)
-        interleaved[0::2] = int_A
-        interleaved[1::2] = int_B
-        payload = interleaved.tobytes()
-    else:
-        payload = int_A.tobytes()
-        
-    return header + payload
+    return header + body_A + body_B + bytes(footer_buf)
 
 def encrypt_iaas_dat(x_data, y_A, y_B=None, time_unit="us"):
     """
     Encrypts raw numpy waveform arrays into proprietary IAAS encrypted DAT format.
     Formats payload as line-broken Base64 text so Windows Notepad opens instantly without freezing.
     """
-    salt = os.urandom(16)  # 16-byte random salt
+    salt = os.urandom(16)
     
     meta = {
         "time_unit": time_unit,
@@ -106,26 +91,27 @@ def encrypt_iaas_dat(x_data, y_A, y_B=None, time_unit="us"):
 def decrypt_iaas_dat(b_data):
     """
     Decrypts or unpacks DAT binary file bytes back into x_data, y_A, y_B, time_unit.
-    Supports 70-byte binary DAT files, raw binary DAT files, and encrypted Base64 DAT files.
+    Supports IEEE-754 float64 DAT files (FCHW1-ch1_V-n 1.dat format), 70-byte binary DAT files, and encrypted Base64 DAT files.
     """
     if isinstance(b_data, str):
         b_data = b_data.encode('utf-8', errors='ignore')
 
-    # Check 1: Standard 70-byte Binary DAT Header
-    if len(b_data) >= 70 and b_data.startswith(IAAS_MAGIC_BIN):
+    # Check 1: IEEE-754 Double Precision Float Binary DAT Format (FCHW1-ch1_V-n 1.dat format)
+    if len(b_data) >= 26 and b_data.startswith(IAAS_MAGIC_BIN):
         try:
-            magic, ver, n_samples, dt, t_start, scale_A, scale_B, has_A, has_B, unit_flag, _ = struct.unpack('>4sHIddddBBB25s', b_data[:70])
-            time_unit = "us" if unit_flag == 0 else ("ms" if unit_flag == 1 else "s")
+            magic, ver, n_samples, dt, t_start = struct.unpack('>4sHIdd', b_data[:26])
             x_rec = t_start + np.arange(n_samples) * dt
             
-            payload = b_data[70:]
-            if has_B:
-                samples = np.frombuffer(payload, dtype=np.int16)
-                y_A_rec = samples[0::2].astype(np.float64) * scale_A
-                y_B_rec = samples[1::2].astype(np.float64) * scale_B
-            else:
-                y_A_rec = np.frombuffer(payload, dtype=np.int16).astype(np.float64) * scale_A
-                y_B_rec = None
+            body_bytes = n_samples * 8
+            y_A_rec = np.frombuffer(b_data[26:26+body_bytes], dtype=np.float64)
+            y_B_rec = None
+            
+            time_unit = "us"
+            footer = b_data[26+body_bytes:]
+            if b"Time [s]" in footer: time_unit = "s"
+            elif b"Time [ms]" in footer: time_unit = "ms"
+            elif b"Time [us]" in footer: time_unit = "us"
+
             return x_rec, y_A_rec, y_B_rec, time_unit
         except Exception:
             pass
