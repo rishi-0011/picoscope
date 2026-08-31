@@ -102,7 +102,7 @@ def calculate_iec_parameters(time, raw_voltage):
         win = (t >= tp - 0.3 * T1) & (t <= tp + 10 * T1)
         t_seg, v_seg = t[win], v[win]
         if len(v_seg) > 5:
-            prom = 0.01 * Vext 
+            prom = 0.05 * Vext 
             pk, _ = find_peaks(v_seg, prominence=prom)
             tr, _ = find_peaks(-v_seg, prominence=prom)
             extrema_t = np.sort(np.concatenate([t_seg[pk], t_seg[tr]]))
@@ -550,7 +550,7 @@ def build_review_ui(parent_frame, app=None):
 
         is_chopped = bool(d['t2_us'] and d['t2_us'] < 15.0)
         vp_val = d['v_peak']
-        vp_str = f"{vp_val:.1f} V" if abs(vp_val) > 100 else f"{vp_val:.2f} V"
+        vp_str = f"{vp_val:.2f} kV"
 
         tree_params.insert("", tk.END, values=("Peak Voltage (Vp)", vp_str))
         if d['t1_us']: tree_params.insert("", tk.END, values=("Front Time (T1)", f"{d['t1_us']:.2f} µs"))

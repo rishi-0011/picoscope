@@ -284,19 +284,20 @@ def fetch_hardware_data(app, config):
         pre_len = max(1, int(pre_trig_samples))
         post_len = nSamp - pre_len
         
-        x = np.linspace(0, 10, post_len)
+        x = np.linspace(0, 100, post_len)
         polarity = config.get('polarity', 'Negative')
-        sign = 1 if polarity == 'Positive' else -1
+        sign = 1.0 if polarity == 'Positive' else -1.0
         
         ch1_type = getattr(app, 'ch1_type', 'Voltage')
         ch2_type = getattr(app, 'ch2_type', 'Current')
         
-        exp_v = float(config.get('Expected Voltage [kV]' if ch1_type == 'Voltage' else 'Expected Current [A]', 150))
+        exp_v = float(config.get('Expected Voltage [kV]' if ch1_type == 'Voltage' else 'Expected Current [A]', 100))
         exp_i = float(config.get('Expected Current [A]' if ch2_type == 'Current' else 'Expected Voltage [kV]', 300))
         
-        # Model exact PicoScope 7 T&M physical response: 20% pre-trigger zero line, steep drop, overshoot, and smooth decay
-        imp_A = sign * exp_v * (-0.85 * np.exp(-2.5 * x) + 0.20 * np.exp(-0.35 * x))
-        imp_B = sign * exp_i * (-0.85 * np.exp(-2.5 * x) + 0.20 * np.exp(-0.35 * x))
+        # Standard IEC 60060-1 1.2/50us Lightning Impulse Waveform
+        imp_wave = 1.03 * (np.exp(-0.015 * x) - np.exp(-2.5 * x))
+        imp_A = sign * exp_v * imp_wave
+        imp_B = sign * exp_i * imp_wave
         
         y_data_A = np.concatenate([np.zeros(pre_len), imp_A]) if ch1_active else None
         y_data_B = np.concatenate([np.zeros(pre_len), imp_B]) if ch2_active else None
