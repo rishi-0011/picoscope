@@ -540,6 +540,14 @@ def update_status(parent_frame, is_connected):
         except: pass
 
 def show_empty_tab_page(parent_frame, app, active_tab):
+    if active_tab == "View":
+        if hasattr(app, 'show_waveform_screen'):
+            app.show_waveform_screen()
+        else:
+            import waveform
+            waveform.build_waveform_ui(parent_frame, app)
+        return
+
     if active_tab == "Review":
         import review
         review.build_review_ui(parent_frame, app)
