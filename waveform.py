@@ -486,7 +486,7 @@ def build_waveform_ui(parent_frame, app):
     app.draw_progress = draw_progress
     app.draw_progress(0)
     
-    fig = Figure(figsize=(10, 6), facecolor="#1e1e1e")
+    fig = Figure(figsize=(10, 6), facecolor="#c8cee0")
     fig.subplots_adjust(left=0.08, right=0.92, top=0.95, bottom=0.15, hspace=0.3)
     
     ax1 = None
@@ -500,15 +500,15 @@ def build_waveform_ui(parent_frame, app):
     elif ch2_active:
         ax2 = fig.add_subplot(111)
         
-    def setup_ax(ax, title, y_label, color, spine_color="white"):
-        ax.set_facecolor("#000000")
-        ax.tick_params(colors="white", labelsize=10)
+    def setup_ax(ax, title, y_label, color, spine_color="#1e293b"):
+        ax.set_facecolor("#c4c8d8")
+        ax.tick_params(colors="#1e293b", labelsize=10)
         for spine in ax.spines.values():
             spine.set_color(spine_color)
             spine.set_linewidth(1)
-        ax.set_title(title, color="white", fontsize=11, fontweight="bold")
-        ax.set_ylabel(y_label, color=color, fontsize=10, fontweight="bold")
-        ax.grid(True, color="#555555", linestyle="--", linewidth=0.5)
+        ax.set_title(title, color="#1e293b", fontsize=11, fontweight="bold")
+        ax.set_ylabel(y_label, color="#1e293b", fontsize=10, fontweight="bold")
+        ax.grid(True, color="#9ca4b8", linestyle="-", linewidth=0.7)
         
     if ax1 is not None:
         setup_ax(ax1, "Channel 1 Waveform", f"CH1 {app.ch1_type}", "#0033cc")
@@ -517,7 +517,7 @@ def build_waveform_ui(parent_frame, app):
     if ax2 is not None:
         setup_ax(ax2, "", f"CH2 {app.ch2_type}", "#00e5ff")
         ax2.plot([], [], color="#00e5ff", linewidth=1.2)
-        ax2.set_xlabel("Time", color="white", fontsize=10, fontweight="bold")
+        ax2.set_xlabel("Time", color="#1e293b", fontsize=10, fontweight="bold")
         
     def apply_initial_limits(ax1, ax2):
         time_str = config.get('time_str', '100 us')
@@ -723,7 +723,7 @@ def build_waveform_ui(parent_frame, app):
 
         if ax1 is not None and y_data_A is not None:
             if ax2 is None:
-                ax1.set_xlabel(f"Time ({time_unit})", color="white", fontsize=10, fontweight="bold")
+                ax1.set_xlabel(f"Time ({time_unit})", color="#1e293b", fontsize=10, fontweight="bold")
             else:
                 ax1.set_xlabel("")
                 
@@ -750,7 +750,7 @@ def build_waveform_ui(parent_frame, app):
             ax1.set_yticks(np.linspace(y_min_A, y_max_A, 13))
             
         if ax2 is not None and y_data_B is not None:
-            ax2.set_xlabel(f"Time ({time_unit})", color="white", fontsize=10, fontweight="bold")
+            ax2.set_xlabel(f"Time ({time_unit})", color="#1e293b", fontsize=10, fontweight="bold")
             app.latest_y_B = y_data_B
             y_plot_B = smooth_curve(y_data_B, win=7)
             ax2.axhline(0, color="#666666", linestyle="--", linewidth=0.8, alpha=0.7)
