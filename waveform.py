@@ -61,9 +61,36 @@ def build_waveform_ui(parent_frame, app):
         import setup
         setup.build_setup_ui(parent_frame, app=app)
         setup.update_status(parent_frame, getattr(app, 'is_scope_connected', False))
-        
-    back_btn = tk.Button(top_bar, text="< Back to Setup", bg="#555555", fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=go_back)
-    back_btn.pack(side="left", padx=10, pady=5)
+
+    def go_review():
+        if hasattr(app, 'waveform_job') and app.waveform_job is not None:
+            parent_frame.after_cancel(app.waveform_job)
+            app.waveform_job = None
+            
+        if app.chandle:
+            try:
+                scope_m = read_control_info().get('Scope', 'ps5000a')
+                ps_close = PicoScopeProxy(scope_m)
+                ps_close.ps5000aCloseUnit(app.chandle)
+            except: pass
+            app.chandle = None
+            
+        import review
+        review.build_review_ui(parent_frame, app=app)
+
+    lbl_setup = tk.Label(top_bar, text="Setup", bg="#555555", fg="white", width=10, font=("Segoe UI", 10), pady=5, cursor="hand2")
+    lbl_setup.pack(side="left", padx=1)
+    lbl_setup.bind("<Button-1>", lambda e: go_back())
+
+    lbl_view = tk.Label(top_bar, text="View", bg="#e53935", fg="white", width=10, font=("Segoe UI", 10, "bold"), pady=5)
+    lbl_view.pack(side="left", padx=1)
+
+    lbl_review = tk.Label(top_bar, text="Review", bg="#555555", fg="white", width=10, font=("Segoe UI", 10), pady=5, cursor="hand2")
+    lbl_review.pack(side="left", padx=1)
+    lbl_review.bind("<Button-1>", lambda e: go_review())
+
+    lbl_analysis = tk.Label(top_bar, text="Analysis", bg="#555555", fg="white", width=10, font=("Segoe UI", 10), pady=5, cursor="hand2")
+    lbl_analysis.pack(side="left", padx=1)
 
     def open_save_dialog():
         if app.capture_state != "IDLE":
@@ -220,9 +247,6 @@ def build_waveform_ui(parent_frame, app):
 
         messagebox.showinfo("Saved", f"Successfully saved captured waveform to:\n{filepath}")
 
-    save_btn = tk.Button(top_bar, text="Save", bg="#4fc3f7", fg="black", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=open_save_dialog)
-    save_btn.pack(side="left", padx=5, pady=5)
-
     def open_parameters_dialog():
         if not hasattr(app, 'latest_y_A') or app.latest_y_A is None:
             messagebox.showwarning("No Data", "No waveform data has been captured yet.")
@@ -267,9 +291,6 @@ def build_waveform_ui(parent_frame, app):
             tk.Button(param_win, text="Close", bg="#3b82f6", fg="white", font=("Segoe UI", 10, "bold"), width=12, command=param_win.destroy).pack(pady=15)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to calculate parameters:\n{e}")
-
-    param_btn = tk.Button(top_bar, text="Parameters", bg="#8b5cf6", fg="white", font=("Segoe UI", 10, "bold"), relief="flat", cursor="hand2", command=open_parameters_dialog)
-    param_btn.pack(side="left", padx=5, pady=5)
     
     def perform_exit():
         if hasattr(app, 'waveform_job') and app.waveform_job is not None:
@@ -446,7 +467,13 @@ def build_waveform_ui(parent_frame, app):
     app.lbl_waiting = lbl_waiting
 
     btn_save_wave = tk.Button(progress_frame, text="Save Wave", bg="#4fc3f7", fg="black", font=("Segoe UI", 10, "bold"), relief="raised", bd=2, cursor="hand2", command=open_save_dialog)
-    btn_save_wave.pack(side="top", fill="x", pady=(10, 0))
+    btn_save_wave.pack(side="top", fill="x", pady=(10, 4))
+
+    btn_save = tk.Button(progress_frame, text="Save", bg="#4fc3f7", fg="black", font=("Segoe UI", 10, "bold"), relief="raised", bd=2, cursor="hand2", command=open_save_dialog)
+    btn_save.pack(side="top", fill="x", pady=4)
+
+    btn_param = tk.Button(progress_frame, text="Parameters", bg="#8b5cf6", fg="white", font=("Segoe UI", 10, "bold"), relief="raised", bd=2, cursor="hand2", command=open_parameters_dialog)
+    btn_param.pack(side="top", fill="x", pady=4)
 
     app._blink_state = True
     app._blink_base_color = "#000000"
