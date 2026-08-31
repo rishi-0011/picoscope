@@ -162,10 +162,10 @@ def build_waveform_ui(parent_frame, app):
             has_B = y_B is not None
 
             if ext == ".dat":
-                from iaas_crypto import encrypt_iaas_dat
-                encrypted_bytes = encrypt_iaas_dat(x_data, y_A, y_B, time_unit)
+                from iaas_crypto import pack_binary_dat
+                bin_bytes = pack_binary_dat(x_data, y_A, y_B, time_unit)
                 with open(filepath, 'wb') as f:
-                    f.write(encrypted_bytes)
+                    f.write(bin_bytes)
             elif ext == ".csv":
                 with open(filepath, 'w', newline='', encoding='utf-8') as f:
                     writer = csv.writer(f)

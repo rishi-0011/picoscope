@@ -451,11 +451,11 @@ def build_review_ui(parent_frame, app=None):
         try:
             time_arr, volt_arr = None, None
             
-            # Step 1: Proprietary IAAS DAT File Decryption
+            # Step 1: Proprietary IAAS DAT Binary & Encrypted Unpacking
             try:
                 with open(file_path, 'rb') as f:
                     b_data = f.read()
-                if b_data.startswith(b"IAAS_DAT_V1\x00"):
+                if b_data.startswith(b"IAAS_DAT_V1\x00") or b_data.startswith(b"IAAS"):
                     from iaas_crypto import decrypt_iaas_dat
                     x_dec, y_A_dec, y_B_dec, _ = decrypt_iaas_dat(b_data)
                     time_arr = x_dec
