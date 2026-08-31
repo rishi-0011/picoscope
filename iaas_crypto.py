@@ -10,8 +10,8 @@ IAAS_MAGIC_ENC = b"IAAS_DAT_V1\x00"  # 12 bytes proprietary magic header for enc
 IAAS_MAGIC_BIN = b"IAAS"             # 4 bytes magic header for standard binary DAT
 SECRET_KEY_SEED = b"IAAS_CORONA_POWER_PROPRIETARY_KEY_2026_HV_IMPULSE"
 
-HEADER_TAG = "-----BEGIN IAAS ENCRYPTED DAT WAVEFORM-----\n"
-FOOTER_TAG = "-----END IAAS ENCRYPTED DAT WAVEFORM-----\n"
+HEADER_TAG = "-----BEGIN IAAS BINARY DAT WAVEFORM-----\n"
+FOOTER_TAG = "-----END IAAS BINARY DAT WAVEFORM-----\n"
 
 def _derive_keystream(salt: bytes, length: int) -> bytes:
     """Derive deterministic keystream using SHA-256 counter mode for secure stream encryption."""
@@ -26,9 +26,7 @@ def _derive_keystream(salt: bytes, length: int) -> bytes:
 def pack_binary_dat(x_data, y_A, y_B=None, time_unit="us"):
     """
     Packs raw waveform data matching FCHW1-ch1_V-n 1.dat binary format.
-    - Header: Magic (4 bytes), Version (2 bytes), Sample Count N (uint32), dt (float64), t_start (float64).
-    - Data Body: Packed 64-bit IEEE-754 double-precision floats (float64).
-    - Footer Metadata: Channel labels 'Voltage[kV]', 'Time [s]', and Timestamp.
+    Formats payload as line-broken Base64 text so Windows Notepad opens instantly without freezing.
     """
     n_samples = len(x_data)
     dt = (x_data[-1] - x_data[0]) / (n_samples - 1) if n_samples > 1 else 1e-6
@@ -49,7 +47,14 @@ def pack_binary_dat(x_data, y_A, y_B=None, time_unit="us"):
         footer_buf.extend(struct.pack('>I', len(b_lbl)))
         footer_buf.extend(b_lbl)
         
-    return header + body_A + body_B + bytes(footer_buf)
+    raw_binary_dat = header + body_A + body_B + bytes(footer_buf)
+    
+    # Wrap in 76-character Base64 lines so Windows Notepad opens instantly without freezing
+    b64_str = base64.b64encode(raw_binary_dat).decode('ascii')
+    wrapped_lines = [b64_str[i:i+76] for i in range(0, len(b64_str), 76)]
+    
+    formatted_text = HEADER_TAG + "\n".join(wrapped_lines) + "\n" + FOOTER_TAG
+    return formatted_text.encode('utf-8')
 
 def encrypt_iaas_dat(x_data, y_A, y_B=None, time_unit="us"):
     """
@@ -91,34 +96,14 @@ def encrypt_iaas_dat(x_data, y_A, y_B=None, time_unit="us"):
 def decrypt_iaas_dat(b_data):
     """
     Decrypts or unpacks DAT binary file bytes back into x_data, y_A, y_B, time_unit.
-    Supports IEEE-754 float64 DAT files (FCHW1-ch1_V-n 1.dat format), 70-byte binary DAT files, and encrypted Base64 DAT files.
+    Supports IEEE-754 float64 DAT files (FCHW1-ch1_V-n 1.dat format), raw binary DAT files, and encrypted Base64 DAT files.
     """
     if isinstance(b_data, str):
         b_data = b_data.encode('utf-8', errors='ignore')
 
-    # Check 1: IEEE-754 Double Precision Float Binary DAT Format (FCHW1-ch1_V-n 1.dat format)
-    if len(b_data) >= 26 and b_data.startswith(IAAS_MAGIC_BIN):
-        try:
-            magic, ver, n_samples, dt, t_start = struct.unpack('>4sHIdd', b_data[:26])
-            x_rec = t_start + np.arange(n_samples) * dt
-            
-            body_bytes = n_samples * 8
-            y_A_rec = np.frombuffer(b_data[26:26+body_bytes], dtype=np.float64)
-            y_B_rec = None
-            
-            time_unit = "us"
-            footer = b_data[26+body_bytes:]
-            if b"Time [s]" in footer: time_unit = "s"
-            elif b"Time [ms]" in footer: time_unit = "ms"
-            elif b"Time [us]" in footer: time_unit = "us"
-
-            return x_rec, y_A_rec, y_B_rec, time_unit
-        except Exception:
-            pass
-
-    # Check 2: Encrypted IAAS DAT (raw binary or Base64 wrapped)
+    # Step 1: Decode Base64 line-broken wrapper if present
     raw_bytes = None
-    if b_data.startswith(IAAS_MAGIC_ENC):
+    if b_data.startswith(IAAS_MAGIC_BIN) or b_data.startswith(IAAS_MAGIC_ENC):
         raw_bytes = b_data
     else:
         try:
@@ -129,7 +114,31 @@ def decrypt_iaas_dat(b_data):
         except Exception:
             pass
 
-    if not raw_bytes or not raw_bytes.startswith(IAAS_MAGIC_ENC):
+    if not raw_bytes:
+        raw_bytes = b_data
+
+    # Step 2: Binary DAT Header Parsing
+    if len(raw_bytes) >= 26 and raw_bytes.startswith(IAAS_MAGIC_BIN):
+        try:
+            magic, ver, n_samples, dt, t_start = struct.unpack('>4sHIdd', raw_bytes[:26])
+            x_rec = t_start + np.arange(n_samples) * dt
+            
+            body_bytes = n_samples * 8
+            y_A_rec = np.frombuffer(raw_bytes[26:26+body_bytes], dtype=np.float64)
+            y_B_rec = None
+            
+            time_unit = "us"
+            footer = raw_bytes[26+body_bytes:]
+            if b"Time [s]" in footer: time_unit = "s"
+            elif b"Time [ms]" in footer: time_unit = "ms"
+            elif b"Time [us]" in footer: time_unit = "us"
+
+            return x_rec, y_A_rec, y_B_rec, time_unit
+        except Exception:
+            pass
+
+    # Step 3: Encrypted IAAS DAT Parsing
+    if not raw_bytes.startswith(IAAS_MAGIC_ENC):
         raise ValueError("Invalid or corrupted IAAS DAT file.")
         
     salt = raw_bytes[12:28]
