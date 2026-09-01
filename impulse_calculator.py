@@ -365,7 +365,7 @@ class IECAnalyzerApp(tk.Tk):
             win = (t >= tp - 0.3 * T1) & (t <= tp + 10 * T1)
             t_seg, v_seg = t[win], v[win]
             if len(v_seg) > 5:
-                prom = 0.01 * Vext 
+                prom = 0.05 * Vext 
                 pk, _ = find_peaks(v_seg, prominence=prom)
                 tr, _ = find_peaks(-v_seg, prominence=prom)
                 extrema_t = np.sort(np.concatenate([t_seg[pk], t_seg[tr]]))
@@ -377,15 +377,16 @@ class IECAnalyzerApp(tk.Tk):
         # ----------------------------------------------------------------------
         # 7. STORE RESULTS
         # ----------------------------------------------------------------------
-        # Multiply everything back by polarity for plotting so it draws correctly
         v_peak_plot = Vext * polarity
         base_plot = base * polarity
+        base_peak_plot = base_peak * polarity
         
         self.data = {
             'time_us': t * 1e6, 
             'raw_v': v_raw,
-            'smooth_v': base_plot, # We repurpose smooth_v as the base curve for plotting
+            'smooth_v': base_plot,
             'v_peak': v_peak_plot,
+            'v_base_peak': base_peak_plot,
             'v30': v30 * polarity, 'v50': v50 * polarity, 'v90': v90 * polarity,
             't30_us': t30 * 1e6 if t30 else None,
             't90_us': t90 * 1e6 if t90 else None,
@@ -415,34 +416,38 @@ class IECAnalyzerApp(tk.Tk):
         is_chopped = bool(d['t2_us'] and d['t2_us'] < 15.0)
         
         vp_val = d['v_peak']
-        vp_str = f"{vp_val:.1f} V" if abs(vp_val) > 100 else f"{vp_val:.2f} V"
-        self.tree_params.insert("", tk.END, values=("Peak (Up)", vp_str))
+        vp_str = f"{vp_val:.2f} kV"
+        self.tree_params.insert("", tk.END, values=("Peak Voltage (Up / Vp)", vp_str))
+        if d.get('v_base_peak'):
+            self.tree_params.insert("", tk.END, values=("Base Curve Peak (Ubase)", f"{d['v_base_peak']:.2f} kV"))
         
-        self.tree_params.insert("", tk.END, values=("Front (T1-filtered)", "N/A"))
-        if d['t1_us']: self.tree_params.insert("", tk.END, values=("Front (T1)", f"{d['t1_us']:.2f} µs"))
+        if d['t1_us']: self.tree_params.insert("", tk.END, values=("Front Time (T1)", f"{d['t1_us']:.2f} µs"))
         
-        t2_label = "Chopping Time Tc" if is_chopped else "Half-value T2"
+        t2_label = "Chopping Time (Tc)" if is_chopped else "Half-value Time (T2)"
         
         if d['t2_us']: self.tree_params.insert("", tk.END, values=(t2_label, f"{d['t2_us']:.1f} µs"))
-        if d['o1_us']: self.tree_params.insert("", tk.END, values=("Virtual Origin O1", f"{d['o1_us']:.3f} µs"))
+        if d['o1_us']: self.tree_params.insert("", tk.END, values=("Virtual Origin (O1)", f"{d['o1_us']:.3f} µs"))
         
-        self.tree_params.insert("", tk.END, values=("", "")) 
+        beta_val = d.get('beta_pct', 0)
+        beta_eval = "≤ 5% (Negligible)" if beta_val <= 5.0 else "> 5% (Significant)"
         
-        self.tree_params.insert("", tk.END, values=("Overshoot β", f"{d.get('beta_pct', 0):.2f} %"))
-        self.tree_params.insert("", tk.END, values=("β (K-filtered)", "N/A"))
-        self.tree_params.insert("", tk.END, values=("Osc. Freq (f)", f"{d.get('osc_freq_khz', 0):.2f} kHz"))
+        self.tree_params.insert("", tk.END, values=("Beta Dash (β')", f"{beta_val:.2f} %"))
+        self.tree_params.insert("", tk.END, values=("Overshoot Status", beta_eval))
+        self.tree_params.insert("", tk.END, values=("Oscillation Freq (f)", f"{d.get('osc_freq_khz', 0):.2f} kHz"))
 
         if d['t1_us']:
             is_pass = "PASS" if 0.84 <= d['t1_us'] <= 1.56 else "FAIL"
-            self.tree_tol.insert("", tk.END, values=("T1", "1.20", "± 30%", f"{d['t1_us']:.2f}", is_pass))
+            self.tree_tol.insert("", tk.END, values=("T1", "1.20 µs", "± 30%", f"{d['t1_us']:.2f} µs", is_pass))
             
         if d['t2_us']:
             if not is_chopped:
                 is_pass2 = "PASS" if 40.0 <= d['t2_us'] <= 60.0 else "FAIL"
-                self.tree_tol.insert("", tk.END, values=("T2", "50.00", "± 20%", f"{d['t2_us']:.1f}", is_pass2))
+                self.tree_tol.insert("", tk.END, values=("T2", "50.00 µs", "± 20%", f"{d['t2_us']:.1f} µs", is_pass2))
             else:
-                # Typically 2 to 5 us for chopped, but we'll just show it without strict standard tolerances
-                self.tree_tol.insert("", tk.END, values=("Tc", "2-5", "varies", f"{d['t2_us']:.1f}", "N/A"))
+                self.tree_tol.insert("", tk.END, values=("Tc", "2-5 µs", "varies", f"{d['t2_us']:.1f} µs", "N/A"))
+
+        is_pass_beta = "PASS" if beta_val <= 5.0 else "WARNING (>5%)"
+        self.tree_tol.insert("", tk.END, values=("β'", "≤ 5.00%", "IEC 60060-1", f"{beta_val:.2f} %", is_pass_beta))
 
     def update_plot(self):
         self.ax.clear()
