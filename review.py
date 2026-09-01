@@ -113,12 +113,14 @@ def calculate_iec_parameters(time, raw_voltage):
 
     v_peak_plot = Vext * polarity
     base_plot = base * polarity
+    base_peak_plot = base_peak * polarity
     
     return {
         'time_us': t * 1e6, 
         'raw_v': v_raw,
         'smooth_v': base_plot,
         'v_peak': v_peak_plot,
+        'v_base_peak': base_peak_plot,
         'v30': v30 * polarity if 'v30' in locals() else 0,
         'v50': v50 * polarity if 'v50' in locals() else 0,
         'v90': v90 * polarity if 'v90' in locals() else 0,
@@ -552,20 +554,27 @@ def build_review_ui(parent_frame, app=None):
         vp_val = d['v_peak']
         vp_str = f"{vp_val:.2f} kV"
 
-        tree_params.insert("", tk.END, values=("Peak Voltage (Vp)", vp_str))
+        tree_params.insert("", tk.END, values=("Peak Voltage (Up / Vp)", vp_str))
+        if d.get('v_base_peak'):
+            tree_params.insert("", tk.END, values=("Base Curve Peak (Ubase)", f"{d['v_base_peak']:.2f} kV"))
+
         if d['t1_us']: tree_params.insert("", tk.END, values=("Front Time (T1)", f"{d['t1_us']:.2f} µs"))
         
         t2_label = "Chopping Time (Tc)" if is_chopped else "Half-value Time (T2)"
         if d['t2_us']: tree_params.insert("", tk.END, values=(t2_label, f"{d['t2_us']:.1f} µs"))
         if d['o1_us']: tree_params.insert("", tk.END, values=("Virtual Origin (O1)", f"{d['o1_us']:.3f} µs"))
         
-        tree_params.insert("", tk.END, values=("Overshoot (β)", f"{d.get('beta_pct', 0):.2f} %"))
+        beta_val = d.get('beta_pct', 0)
+        beta_eval = "≤ 5% (Negligible)" if beta_val <= 5.0 else "> 5% (Significant)"
+
+        tree_params.insert("", tk.END, values=("Beta Dash (β')", f"{beta_val:.2f} %"))
+        tree_params.insert("", tk.END, values=("Overshoot Status", beta_eval))
         tree_params.insert("", tk.END, values=("Oscillation Freq (f)", f"{d.get('osc_freq_khz', 0):.2f} kHz"))
 
         tk.Label(param_win, text="IEC 60060-1 Tolerance Verification", bg="#2b2b2b", fg="white",
                  font=("Segoe UI", 11, "bold")).pack(anchor="w", padx=15, pady=(5, 5))
 
-        tree_tol = ttk.Treeview(param_win, columns=("Param", "Nominal", "Tol", "Measured", "Pass"), show="headings", height=3, style="Review.Treeview")
+        tree_tol = ttk.Treeview(param_win, columns=("Param", "Nominal", "Tol", "Measured", "Pass"), show="headings", height=4, style="Review.Treeview")
         for col in ["Param", "Nominal", "Tol", "Measured", "Pass"]:
             tree_tol.heading(col, text=col)
         
@@ -586,6 +595,9 @@ def build_review_ui(parent_frame, app=None):
                 tree_tol.insert("", tk.END, values=("T2", "50.00 µs", "± 20%", f"{d['t2_us']:.1f} µs", is_pass2))
             else:
                 tree_tol.insert("", tk.END, values=("Tc", "2-5 µs", "varies", f"{d['t2_us']:.1f} µs", "N/A"))
+
+        is_pass_beta = "PASS" if beta_val <= 5.0 else "WARNING (>5%)"
+        tree_tol.insert("", tk.END, values=("β'", "≤ 5.00%", "IEC 60060-1", f"{beta_val:.2f} %", is_pass_beta))
 
         tk.Button(param_win, text="Close", bg="#e53935", fg="white", font=("Segoe UI", 10, "bold"),
                   command=param_win.destroy, width=10).pack(pady=10)
