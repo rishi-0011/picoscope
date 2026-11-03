@@ -11,128 +11,9 @@ from scipy.optimize import curve_fit
 from scipy.signal import find_peaks
 
 # ----------------------------------------------------------------------
-# CALCULATION ENGINE (Exact math from impulse_calculator.py)
+# CALCULATION ENGINE (Exact math from formula_engine.py & formulas.txt)
 # ----------------------------------------------------------------------
-def calculate_iec_parameters(time, raw_voltage):
-    t = time
-    v_raw = raw_voltage
-    
-    # Polarity detection
-    polarity = -1 if abs(np.min(v_raw)) > abs(np.max(v_raw)) else 1
-    v = v_raw * polarity
-
-    idx_peak = int(np.argmax(v))
-    Vext = v[idx_peak]
-    tp = t[idx_peak]
-
-    def _crossing_time(target, tt, vv):
-        idx = np.where(vv >= target)[0]
-        if len(idx) == 0:
-            raise ValueError("Signal never reaches requested level.")
-        idx = idx[0]
-        if idx == 0: return tt[0]
-        t0, t1 = tt[idx - 1], tt[idx]
-        v0, v1 = vv[idx - 1], vv[idx]
-        frac = (target - v0) / (v1 - v0) if (v1 - v0) != 0 else 0
-        return t0 + frac * (t1 - t0)
-
-    def _double_exp(tt, A, alpha, beta_p, t0):
-        tau = np.clip(tt - t0, 0, None)
-        exp1 = np.exp(np.clip(-alpha * tau, -700, 700))
-        exp2 = np.exp(np.clip(-beta_p * tau, -700, 700))
-        return A * (exp1 - exp2)
-
-    # Front Timing (T1, O1)
-    front_t, front_v = t[: idx_peak + 1], v[: idx_peak + 1]
-    v30, v90 = 0.30 * Vext, 0.90 * Vext
-    
-    try:
-        t30 = _crossing_time(v30, front_t, front_v)
-        t90 = _crossing_time(v90, front_t, front_v)
-        T1 = 1.67 * (t90 - t30)
-        O1 = t30 - 0.3 * (t90 - t30)
-    except Exception:
-        t30, t90, T1, O1 = None, None, None, None
-
-    # Tail Timing (T2)
-    tail_t, tail_v = t[idx_peak:], v[idx_peak:]
-    v50 = 0.50 * Vext
-    idx50 = np.where(tail_v <= v50)[0]
-    
-    t50, T2 = None, None
-    if len(idx50) > 0 and O1 is not None:
-        idx50 = idx50[0]
-        if idx50 > 0:
-            t0_, t1_ = tail_t[idx50 - 1], tail_t[idx50]
-            v0_, v1_ = tail_v[idx50 - 1], tail_v[idx50]
-            frac = (v50 - v0_) / (v1_ - v0_) if (v1_ - v0_) != 0 else 0
-            t50 = t0_ + frac * (t1_ - t0_)
-            T2 = t50 - O1
-
-    # Base Curve Fit & Overshoot Beta
-    base = np.zeros_like(v)
-    base_peak = Vext
-    beta_prime = 0.0
-    
-    if T1 is not None and T2 is not None and O1 is not None:
-        tail_start = tp + 4 * T1
-        mask_fit = ((t >= O1) & (t < t90)) | (t > tail_start)
-        if mask_fit.sum() < 5:
-            mask_fit = t >= O1
-
-        A0 = Vext * 1.3
-        alpha0 = np.log(2) / max(T2, 1e-9)
-        beta0 = 3 / max(T1, 1e-9)
-        try:
-            popt, _ = curve_fit(
-                lambda tt, A, a, b: _double_exp(tt, A, a, b, O1),
-                t[mask_fit], v[mask_fit],
-                p0=[A0, alpha0, beta0], maxfev=50000,
-            )
-            base = _double_exp(t, popt[0], popt[1], popt[2], O1)
-            base_peak = np.nanmax(base)
-            beta_os = Vext - base_peak
-            beta_prime = (beta_os / Vext) * 100.0 if Vext > 0 else 0
-        except Exception:
-            base = v
-
-    # Oscillation Frequency
-    f_osc = np.nan
-    if T1 is not None:
-        win = (t >= tp - 0.3 * T1) & (t <= tp + 10 * T1)
-        t_seg, v_seg = t[win], v[win]
-        if len(v_seg) > 5:
-            prom = 0.05 * Vext 
-            pk, _ = find_peaks(v_seg, prominence=prom)
-            tr, _ = find_peaks(-v_seg, prominence=prom)
-            extrema_t = np.sort(np.concatenate([t_seg[pk], t_seg[tr]]))
-            if len(extrema_t) >= 2:
-                half_periods = np.diff(extrema_t)
-                period = 2 * np.mean(half_periods)
-                f_osc = 1.0 / period
-
-    v_peak_plot = Vext * polarity
-    base_plot = base * polarity
-    base_peak_plot = base_peak * polarity
-    
-    return {
-        'time_us': t * 1e6, 
-        'raw_v': v_raw,
-        'smooth_v': base_plot,
-        'v_peak': v_peak_plot,
-        'v_base_peak': base_peak_plot,
-        'v30': v30 * polarity if 'v30' in locals() else 0,
-        'v50': v50 * polarity if 'v50' in locals() else 0,
-        'v90': v90 * polarity if 'v90' in locals() else 0,
-        't30_us': t30 * 1e6 if t30 else None,
-        't90_us': t90 * 1e6 if t90 else None,
-        't50_us': t50 * 1e6 if t50 else None,
-        't1_us': T1 * 1e6 if T1 else None,
-        't2_us': T2 * 1e6 if T2 else None,
-        'o1_us': O1 * 1e6 if O1 else None,
-        'beta_pct': beta_prime,
-        'osc_freq_khz': f_osc * 1e-3 if not np.isnan(f_osc) else 0
-    }
+from formula_engine import FormulaEngine, calculate_iec_parameters
 
 # ----------------------------------------------------------------------
 # SMART NAVIGATION TOOLBAR WITH NATIVE CUSTOM ARROWS & MK BUTTON
@@ -140,21 +21,32 @@ def calculate_iec_parameters(time, raw_voltage):
 class SmartReviewNavToolbar(NavigationToolbar2Tk):
     toolitems = []
 
-    def __init__(self, canvas, window, pan_callback=None, mk_callback=None, home_callback=None):
+    def __init__(self, canvas, window, pan_callback=None, mk_callback=None, home_callback=None, icon_size=12):
         super().__init__(canvas, window)
         self.pan_callback = pan_callback
         self.mk_callback = mk_callback
         self.home_callback = home_callback
+        self.icon_size = icon_size
         self._small_images = []
 
-        if hasattr(self, 'message'):
-            try: self.message.pack_forget()
-            except: pass
-        if hasattr(self, 'loc_label'):
-            try: self.loc_label.pack_forget()
-            except: pass
+        # Remove all default Matplotlib widgets (including right-side message labels)
+        for c in list(self.winfo_children()):
+            try:
+                c.pack_forget()
+                c.destroy()
+            except:
+                pass
 
         self._build_micro_toolbar()
+
+        # Ensure no right-side phantom widgets remain
+        for c in list(self.winfo_children()):
+            if not isinstance(c, tk.Button):
+                try:
+                    c.pack_forget()
+                    c.destroy()
+                except:
+                    pass
 
     def set_message(self, s):
         pass
@@ -196,19 +88,21 @@ class SmartReviewNavToolbar(NavigationToolbar2Tk):
         for name, img_file, cmd in tools:
             try:
                 img = Image.open(img_file).convert("RGBA")
-                img = img.resize((12, 12), Image.Resampling.LANCZOS)
+                img = img.resize((self.icon_size, self.icon_size), Image.Resampling.LANCZOS)
                 photo = ImageTk.PhotoImage(img)
                 self._small_images.append(photo)
 
                 btn = tk.Button(self, image=photo, command=cmd, relief="raised", bd=1,
                                 bg="#e2e8f0", activebackground="#cbd5e1", padx=0, pady=0)
-                btn.pack(side=tk.LEFT, padx=1, pady=1)
+                btn.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=1, pady=1)
             except Exception as e:
                 print(f"Error loading micro icon {name}:", e)
 
-        btn_mk = tk.Button(self, text="MK", font=("Segoe UI", 7, "bold"), bg="#facc15", fg="black",
-                           width=2, relief="raised", bd=1, cursor="hand2", command=self._do_mk, padx=0, pady=0)
-        btn_mk.pack(side=tk.LEFT, padx=1, pady=1)
+        if self.mk_callback is not None:
+            mk_font = ("Segoe UI", 8 if self.icon_size >= 14 else 7, "bold")
+            btn_mk = tk.Button(self, text="MK", font=mk_font, bg="#facc15", fg="black",
+                               relief="raised", bd=1, cursor="hand2", command=self._do_mk, padx=0, pady=0)
+            btn_mk.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=1, pady=1)
 
 # ----------------------------------------------------------------------
 # REVIEW TAB UI BUILDER
@@ -256,11 +150,22 @@ def build_review_ui(parent_frame, app=None):
                 lbl.bind("<Button-1>", lambda e, name=t: go_tab(name))
         lbl.pack(side="left", padx=1 if t != "Setup" else 0)
 
+    def perform_review_exit():
+        if app and hasattr(app, 'exit_app'):
+            app.exit_app()
+        else:
+            try:
+                parent_frame.winfo_toplevel().destroy()
+            except Exception:
+                pass
+            import os
+            os._exit(0)
+
     # Exit Button
     if app:
         exit_btn = tk.Button(tab_frame, text="EXIT", bg="#facc15", fg="black", font=("Segoe UI", 10, "bold"),
                              relief="raised", borderwidth=2, width=12, height=1, pady=0, cursor="hand2",
-                             command=app.root.quit)
+                             command=perform_review_exit)
         exit_btn.pack(side="right", padx=10, pady=2)
 
     # Status LED & Label
@@ -297,9 +202,10 @@ def build_review_ui(parent_frame, app=None):
     # Logo on top right corner
     try:
         from PIL import Image, ImageTk
-        logo_path = r"c:\Users\MaharshiM\Music\Picoscope\images\carona_transparent.png"
+        BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+        logo_path = os.path.join(BASE_DIR, "images", "carona_transparent.png")
         if not os.path.exists(logo_path):
-            logo_path = r"c:\Users\MaharshiM\Music\Picoscope\images\iaas_logo.png"
+            logo_path = os.path.join(BASE_DIR, "images", "iaas_logo.png")
 
         if os.path.exists(logo_path):
             img = Image.open(logo_path)
@@ -369,6 +275,12 @@ def build_review_ui(parent_frame, app=None):
 
         time_s = d['time_us'] * 1e-6
         ax.plot(time_s, d['raw_v'], label='Raw Waveform', color='#0033cc', linewidth=1.2)
+
+        if d.get('smooth_v') is not None and np.any(~np.isnan(d['smooth_v'])):
+            ax.plot(time_s, d['smooth_v'], label='IEC Mean Curve (Base)', color='#dc2626', linestyle='--', linewidth=1.2, alpha=0.85)
+
+        if d.get('v_kfilt') is not None and np.any(~np.isnan(d['v_kfilt'])):
+            ax.plot(time_s, d['v_kfilt'], label=r'K-Factor Filtered ($v_{\mathrm{kfilt}}$)', color='#ea580c', linestyle='-', linewidth=1.2, alpha=0.85)
 
         # Render loaded filename at bottom right corner
         filename = d.get('filename', '')
@@ -532,8 +444,9 @@ def build_review_ui(parent_frame, app=None):
 
         param_win = tk.Toplevel(parent_frame)
         param_win.title(f"IEC 60060-1 Parameters - {ch_key}")
-        param_win.geometry("520x450")
+        param_win.geometry("540x560")
         param_win.configure(bg="#2b2b2b")
+        param_win.attributes("-topmost", True)
         param_win.grab_set()
 
         style = ttk.Style(param_win)
@@ -543,32 +456,54 @@ def build_review_ui(parent_frame, app=None):
         tk.Label(param_win, text=f"Calculated IEC Parameters ({ch_key})", bg="#2b2b2b", fg="#facc15",
                  font=("Segoe UI", 12, "bold")).pack(anchor="w", padx=15, pady=(15, 5))
 
-        tree_params = ttk.Treeview(param_win, columns=("Parameter", "Value"), show="headings", height=7, style="Review.Treeview")
+        tree_params = ttk.Treeview(param_win, columns=("Parameter", "Value"), show="headings", height=11, style="Review.Treeview")
         tree_params.heading("Parameter", text="Parameter")
         tree_params.heading("Value", text="Value")
-        tree_params.column("Parameter", width=260)
+        tree_params.column("Parameter", width=280)
         tree_params.column("Value", width=180, anchor="e")
         tree_params.pack(fill="x", padx=15, pady=(0, 15))
 
-        is_chopped = bool(d['t2_us'] and d['t2_us'] < 15.0)
+        is_chopped = bool(d.get('is_chopped', False))
+        is_front_chopped = bool(d.get('is_front_chopped', False))
         vp_val = d['v_peak']
         vp_str = f"{vp_val:.2f} kV"
 
-        tree_params.insert("", tk.END, values=("Peak Voltage (Up / Vp)", vp_str))
-        if d.get('v_base_peak'):
+        peak_label = "Chopping Voltage (Uc)" if is_front_chopped else "Peak Voltage (Up / Vp)"
+        tree_params.insert("", tk.END, values=(peak_label, vp_str))
+
+        if not is_front_chopped and d.get('u_pkfilt') is not None:
+            tree_params.insert("", tk.END, values=("Filtered Peak (Up,kfilt)", f"{d['u_pkfilt']:.2f} kV"))
+
+        if not is_front_chopped and d.get('v_base_peak') is not None:
             tree_params.insert("", tk.END, values=("Base Curve Peak (Ubase)", f"{d['v_base_peak']:.2f} kV"))
 
-        if d['t1_us']: tree_params.insert("", tk.END, values=("Front Time (T1)", f"{d['t1_us']:.2f} µs"))
+        if d.get('t1_us') is not None:
+            tree_params.insert("", tk.END, values=("Front Time (T1)", f"{d['t1_us']:.2f} µs"))
         
         t2_label = "Chopping Time (Tc)" if is_chopped else "Half-value Time (T2)"
-        if d['t2_us']: tree_params.insert("", tk.END, values=(t2_label, f"{d['t2_us']:.1f} µs"))
-        if d['o1_us']: tree_params.insert("", tk.END, values=("Virtual Origin (O1)", f"{d['o1_us']:.3f} µs"))
-        
-        beta_val = d.get('beta_pct', 0)
-        beta_eval = "≤ 5% (Negligible)" if beta_val <= 5.0 else "> 5% (Significant)"
+        if d.get('t2_us') is not None:
+            tree_params.insert("", tk.END, values=(t2_label, f"{d['t2_us']:.1f} µs"))
 
-        tree_params.insert("", tk.END, values=("Beta Dash (β')", f"{beta_val:.2f} %"))
-        tree_params.insert("", tk.END, values=("Overshoot Status", beta_eval))
+        if d.get('o1_us') is not None:
+            tree_params.insert("", tk.END, values=("Virtual Origin (O1)", f"{d['o1_us']:.3f} µs"))
+
+        if d.get('steepness_kv_us') is not None:
+            tree_params.insert("", tk.END, values=("Virtual Steepness (S)", f"{d['steepness_kv_us']:.2f} kV/µs"))
+        
+        beta_raw = d.get('beta_raw_pct')
+        beta_dash = d.get('beta_dash_pct')
+        if is_front_chopped:
+            tree_params.insert("", tk.END, values=("Beta (β) [Raw Overshoot]", "N/A (Front Chopped)"))
+            tree_params.insert("", tk.END, values=("Beta Dash (β') [Filtered]", "N/A (Front Chopped)"))
+            tree_params.insert("", tk.END, values=("Overshoot Status", "N/A (Front Chopped)"))
+        else:
+            beta_eval = "≤ 5% (Negligible)" if (beta_dash is not None and beta_dash <= 5.0) else "> 5% (Significant)"
+            beta_raw_str = f"{beta_raw:.2f} %" if beta_raw is not None else "N/A"
+            beta_dash_str = f"{beta_dash:.2f} %" if beta_dash is not None else "N/A"
+            tree_params.insert("", tk.END, values=("Beta (β) [Raw Overshoot]", beta_raw_str))
+            tree_params.insert("", tk.END, values=("Beta Dash (β') [Filtered]", beta_dash_str))
+            tree_params.insert("", tk.END, values=("Overshoot Status", beta_eval))
+            
         tree_params.insert("", tk.END, values=("Oscillation Freq (f)", f"{d.get('osc_freq_khz', 0):.2f} kHz"))
 
         tk.Label(param_win, text="IEC 60060-1 Tolerance Verification", bg="#2b2b2b", fg="white",
@@ -585,19 +520,22 @@ def build_review_ui(parent_frame, app=None):
         tree_tol.column("Pass", width=80, anchor="center")
         tree_tol.pack(fill="x", padx=15, pady=(0, 15))
 
-        if d['t1_us']:
+        if d.get('t1_us') is not None:
             is_pass = "PASS" if 0.84 <= d['t1_us'] <= 1.56 else "FAIL"
             tree_tol.insert("", tk.END, values=("T1", "1.20 µs", "± 30%", f"{d['t1_us']:.2f} µs", is_pass))
 
-        if d['t2_us']:
+        if d.get('t2_us') is not None:
             if not is_chopped:
                 is_pass2 = "PASS" if 40.0 <= d['t2_us'] <= 60.0 else "FAIL"
                 tree_tol.insert("", tk.END, values=("T2", "50.00 µs", "± 20%", f"{d['t2_us']:.1f} µs", is_pass2))
             else:
                 tree_tol.insert("", tk.END, values=("Tc", "2-5 µs", "varies", f"{d['t2_us']:.1f} µs", "N/A"))
 
-        is_pass_beta = "PASS" if beta_val <= 5.0 else "WARNING (>5%)"
-        tree_tol.insert("", tk.END, values=("β'", "≤ 5.00%", "IEC 60060-1", f"{beta_val:.2f} %", is_pass_beta))
+        if not is_front_chopped and beta_dash is not None:
+            is_pass_beta = "PASS" if beta_dash <= 5.0 else "WARNING (>5%)"
+            tree_tol.insert("", tk.END, values=("β'", "≤ 5.00%", "IEC 60060-1", f"{beta_dash:.2f} %", is_pass_beta))
+        else:
+            tree_tol.insert("", tk.END, values=("β'", "≤ 5.00%", "IEC 60060-1", "N/A", "N/A"))
 
         tk.Button(param_win, text="Close", bg="#e53935", fg="white", font=("Segoe UI", 10, "bold"),
                   command=param_win.destroy, width=10).pack(pady=10)

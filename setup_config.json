@@ -1,16 +1,19 @@
 {
     "Impulse Type": "Lightning",
-    "Polarity": "Positive",
-    "Expected Voltage [kV]": "6",
+    "Polarity": "Negative",
+    "Expected Voltage [kV]": "100",
     "Expected Current [A]": "300",
-    "N\u00b0 of Shots": "3",
+    "N\u00b0 of Shots": "1",
     "Window Time": "100 us",
     "ch1_active": true,
     "ch1_type": "Voltage",
-    "ch1_int": "100",
-    "ch1_ext": "10",
+    "ch1_int": "20",
+    "ch1_ext": "1000",
     "ch2_active": false,
     "ch2_type": "Voltage",
-    "ch2_int": "100",
-    "ch2_ext": "10"
+    "ch2_int": "200",
+    "ch2_ext": "1",
+    "winding_definition": "",
+    "phase": "",
+    "tap_changer_pos": ""
 }

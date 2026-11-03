@@ -1,6 +1,9 @@
 __pycache__/
 *.pyc
 captured_data/
+Capture Data/
+scratch/
 *.csv
 *.txt
 !control info.txt
+!formulas.txt

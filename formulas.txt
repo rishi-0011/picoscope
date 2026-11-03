@@ -1,0 +1,55 @@
+# ==============================================================================
+# IEC 60060-1 IMPULSE CALCULATION FORMULAS
+# ==============================================================================
+# This configuration file defines the mathematical formulas used by the Impulse
+# Calculator. The application dynamically reads and evaluates these equations.
+# You can modify any formula or coefficient below without altering python code.
+#
+# Available Input Variables (provided by waveform analysis):
+#   Vext       : Peak / extreme voltage of the impulse waveform (kV or V)
+#   t30        : Time instant where front reaches 30% level (seconds)
+#   t90        : Time instant where front reaches 90% level (seconds)
+#   t50        : Time instant where tail falls to 50% level (seconds)
+#   t_chop     : Time instant of chopping collapse (seconds)
+#   Ubase      : Maximum peak voltage of the fitted base curve (kV or V)
+#   Up_kfilt   : Peak voltage of the K-factor filtered curve (Annex B)
+#
+# Supported Operators: +, -, *, /, **, (, ) and functions: abs, min, max, exp, log
+# ==============================================================================
+
+# --- 1. Voltage Threshold Levels ---
+v30 = 0.30 * Vext
+v90 = 0.90 * Vext
+v50 = 0.50 * Vext
+
+# --- 2. Front Time (T1) [IEC 60060-1 Clause 7.1.18] ---
+# T1 is defined as 1 / 0.6 times the interval between 30% and 90% points:
+# T1 = (t90 - t30) / 0.6  (or equivalently: 1.6667 * (t90 - t30))
+T_front_interval = t90 - t30
+T1 = T_front_interval / 0.6
+
+# --- 3. Virtual Origin (O1) [IEC 60060-1 Clause 7.1.19] ---
+# O1 is the instant preceding the 30% point by 0.3 * T1
+# Geometrically: t30 - 0.3 * T1 = t30 - 0.5 * (t90 - t30)
+O1 = t30 - (0.3 * T1)
+
+# --- 4. Time to Half-Value (T2) [IEC 60060-1 Clause 7.1.22] ---
+# Virtual parameter: interval from virtual origin O1 to 50% level on tail
+T2 = t50 - O1
+
+# --- 5. Time to Chopping (Tc) [IEC 60060-1 Clause 7.1.27] ---
+# Virtual parameter: interval from virtual origin O1 to instant of chopping
+Tc = t_chop - O1
+
+# --- 6. Overshoot Magnitude (Beta) [IEC 60060-1 Clause 7.1.16 & 7.1.17] ---
+# Difference between extreme value and base curve maximum in percent:
+beta = ((Vext - Ubase) / Ubase) * 100.0
+
+# --- 7. Relative Overshoot (Beta Dash / β') [IEC 60060-1 Annex B.3] ---
+# Filtered overshoot using k-factor test voltage function in percent:
+beta_dash = ((Up_kfilt - Ubase) / Ubase) * 100.0
+
+# --- 8. Virtual Steepness (S) for Chopped Waves [IEC 60060-1 Clause 7.1.30] ---
+# Virtual steepness in V/s (or kV/µs):
+S = Vext / T1
+

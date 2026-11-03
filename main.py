@@ -7,9 +7,11 @@ from tkinter import ttk
 from PIL import Image, ImageTk
 import sys
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 def read_control_info():
     config = {'Scope': 'ps5000a', 'Serial no.': None, 'Hardware resolution': '14BIT'}
-    info_path = r"c:\Users\MaharshiM\Music\Picoscope\control info.txt"
+    info_path = os.path.join(BASE_DIR, "control info.txt")
     if os.path.exists(info_path):
         with open(info_path, 'r', encoding='utf-8') as f:
             for line in f:
@@ -55,9 +57,10 @@ class PicoScopeApp:
         y = (screen_height // 2) - (self.splash_h // 2)
         self.splash.geometry(f"{self.splash_w}x{self.splash_h}+{x}+{y}")
         
-        self.video_path = r"C:\Users\MaharshiM\Music\Picoscope\IAAS.mp4"
+        self.video_path = os.path.join(BASE_DIR, "IAAS.mp4")
         self.splash_label = tk.Label(self.splash, bg="#000000")
         self.splash_label.pack(expand=True, fill="both")
+        self.root.protocol("WM_DELETE_WINDOW", self.exit_app)
         
         if os.path.exists(self.video_path):
             self.cap = cv2.VideoCapture(self.video_path)
@@ -209,7 +212,7 @@ class PicoScopeApp:
         progress_card.columnconfigure(0, weight=1)
 
         try:
-            img_path = r"c:\Users\MaharshiM\Music\Picoscope\images\carona_transparent.png"
+            img_path = os.path.join(BASE_DIR, "images", "carona_transparent.png")
             if os.path.exists(img_path):
                 img = Image.open(img_path)
                 img.thumbnail((390, 130))
@@ -248,9 +251,10 @@ class PicoScopeApp:
             self.root.after(2000, self.show_setup_screen)
 
     def show_setup_screen(self):
-        self.root.geometry("800x500")
+        sw = self.root.winfo_screenwidth()
+        sh = self.root.winfo_screenheight()
+        self.root.geometry(f"{sw}x{sh}+0+0")
         self.root.resizable(True, True)
-        self.root.state("zoomed")
         self.root.overrideredirect(True)
         self.root.configure(bg="#8c97a8")
         self.isolated_frame.configure(bg="#8c97a8")
@@ -263,6 +267,35 @@ class PicoScopeApp:
         import waveform
         waveform.build_waveform_ui(self.isolated_frame, app=self)
 
+    def exit_app(self):
+        chandle = getattr(self, 'chandle', None)
+        if chandle is not None and chandle != -1:
+            try:
+                c_info = read_control_info()
+                scope_m = c_info.get('Scope', 'ps5000a')
+                import importlib
+                picosdk_module = importlib.import_module(f"picosdk.{scope_m}")
+                ps = getattr(picosdk_module, scope_m)
+                try:
+                    ps.ps5000aStop(chandle)
+                except Exception:
+                    pass
+                try:
+                    ps.ps5000aCloseUnit(chandle)
+                except Exception:
+                    pass
+            except Exception:
+                pass
+            self.chandle = None
+
+        try:
+            self.root.destroy()
+        except Exception:
+            pass
+
+        import os
+        os._exit(0)
+
     def show_clean_result_screen(self, message, bg_color, text_color, is_error=False):
         for widget in self.isolated_frame.winfo_children():
             widget.destroy()
@@ -272,7 +305,7 @@ class PicoScopeApp:
         clean_card.columnconfigure(0, weight=1)
         
         try:
-            img_path = r"c:\Users\MaharshiM\Music\Picoscope\images\carona_transparent.png"
+            img_path = os.path.join(BASE_DIR, "images", "carona_transparent.png")
             if os.path.exists(img_path):
                 img = Image.open(img_path)
                 img.thumbnail((390, 130))
@@ -305,10 +338,10 @@ class PicoScopeApp:
                 padx=15,
                 pady=6,
                 cursor="hand2",
-                command=self.root.quit
+                command=self.exit_app
             )
             exit_button.grid(row=2, column=0, pady=(15, 0))
-            self.root.after(10000, self.root.quit)
+            self.root.after(10000, self.exit_app)
 
 if __name__ == "__main__":
     app_window = tk.Tk()

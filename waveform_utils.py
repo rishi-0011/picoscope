@@ -2,9 +2,11 @@ import os
 import math
 import numpy as np
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 def read_control_info():
     config = {'Scope': 'ps5000a', 'Serial no.': None, 'Hardware resolution': '14BIT'}
-    info_path = r"c:\Users\MaharshiM\Music\Picoscope\control info.txt"
+    info_path = os.path.join(BASE_DIR, "control info.txt")
     if os.path.exists(info_path):
         with open(info_path, 'r', encoding='utf-8') as f:
             for line in f:

@@ -3,7 +3,8 @@ from tkinter import ttk
 import json
 import os
 
-CONFIG_FILE = r"c:\Users\MaharshiM\Music\Picoscope\setup_config.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.path.join(BASE_DIR, "setup_config.json")
 
 def load_config():
     if os.path.exists(CONFIG_FILE):
@@ -86,9 +87,20 @@ def build_setup_ui(parent_frame, app=None):
         lbl_review.bind("<Button-1>", lambda e: show_empty_tab_page(parent_frame, app, "Review"))
         lbl_analysis.bind("<Button-1>", lambda e: show_empty_tab_page(parent_frame, app, "Analysis"))
     
+    def perform_app_exit():
+        if app and hasattr(app, 'exit_app'):
+            app.exit_app()
+        else:
+            try:
+                parent_frame.winfo_toplevel().destroy()
+            except Exception:
+                pass
+            import os
+            os._exit(0)
+
     # Exit Button
     if app:
-        exit_btn = tk.Button(tab_frame, text="EXIT", bg="#facc15", fg="black", font=("Segoe UI", 10, "bold"), relief="raised", borderwidth=2, width=12, height=1, pady=0, cursor="hand2", command=app.root.quit)
+        exit_btn = tk.Button(tab_frame, text="EXIT", bg="#facc15", fg="black", font=("Segoe UI", 10, "bold"), relief="raised", borderwidth=2, width=12, height=1, pady=0, cursor="hand2", command=perform_app_exit)
         exit_btn.pack(side="right", padx=10, pady=2)
 
     # Status LED & Label
@@ -116,7 +128,7 @@ def build_setup_ui(parent_frame, app=None):
         from PIL import Image, ImageTk
         import os
         # Loading from images folder to restore the original Carona Power logo
-        img_path = r"c:\Users\MaharshiM\Music\Picoscope\images\carona_transparent.png"
+        img_path = os.path.join(BASE_DIR, "images", "carona_transparent.png")
         if os.path.exists(img_path):
             img = Image.open(img_path)
             img.thumbnail((390, 130)) # Resize to fit nicely (Increased by 30%)
@@ -128,7 +140,7 @@ def build_setup_ui(parent_frame, app=None):
     
     # IAAS Logo
     try:
-        iaas_img_path = r"c:\Users\MaharshiM\Music\Picoscope\images\iaas_logo.png"
+        iaas_img_path = os.path.join(BASE_DIR, "images", "iaas_logo.png")
         if os.path.exists(iaas_img_path):
             iaas_img = Image.open(iaas_img_path)
             iaas_img.thumbnail((450, 150)) # Resize to fit nicely (increased by 50%)
@@ -392,23 +404,450 @@ def build_setup_ui(parent_frame, app=None):
             save_dict["ch2_int"] = app.config['ch2_int']
             save_dict["ch2_ext"] = app.config['ch2_ext']
             
+            t_path = getattr(app, 'config', {}).get('test_path') or saved_config.get('test_path', os.path.join(BASE_DIR, 'Capture Data'))
+            if hasattr(app, 'config'):
+                app.config['test_path'] = t_path
+            save_dict['test_path'] = t_path
+            
             save_config(save_dict)
             
-            if hasattr(app, 'show_waveform_screen'):
-                if hasattr(parent_frame, 'setup_poll_job') and parent_frame.setup_poll_job:
-                    parent_frame.after_cancel(parent_frame.setup_poll_job)
-                    parent_frame.setup_poll_job = None
-                
-                if hasattr(parent_frame, 'enter_btn'):
-                    parent_frame.enter_btn.config(state="disabled", text="Opening...")
-                
-                # Wait 1000ms to allow PicoSDK to release EnumerateUnits locks before OpenUnit
-                parent_frame.after(1000, app.show_waveform_screen)
+            parent_frame.is_acquiring = True
+            if hasattr(parent_frame, 'enter_btn'):
+                parent_frame.enter_btn.config(state="disabled", bg="#555555")
             
+            def show_niscope_dialog():
+                ni_dialog = tk.Toplevel(parent_frame)
+                ni_dialog.overrideredirect(True)
+                ni_dialog.configure(bg="#8c97a8")
+                
+                box = tk.Frame(ni_dialog, bg="#8c97a8", bd=2, relief="groove")
+                box.pack(fill="both", expand=True, padx=2, pady=2)
+                
+                top_row = tk.Frame(box, bg="#8c97a8")
+                top_row.pack(fill="both", expand=True, padx=12, pady=(10, 4))
+                
+                left_f = tk.Frame(top_row, bg="#8c97a8", width=90)
+                left_f.pack(side="left", fill="y", padx=(0, 10))
+                left_f.pack_propagate(False)
+                
+                hg_path = os.path.join(BASE_DIR, "images", "hourglass_exact.png")
+                if os.path.exists(hg_path):
+                    try:
+                        from PIL import Image, ImageTk
+                        img = Image.open(hg_path)
+                        img = img.resize((50, 65), Image.Resampling.LANCZOS)
+                        ni_dialog.img_tk = ImageTk.PhotoImage(img)
+                        lbl_img = tk.Label(left_f, image=ni_dialog.img_tk, bg="#8c97a8")
+                        lbl_img.pack(side="top", pady=(4, 2))
+                    except Exception as e:
+                        print("Error loading hourglass image:", e)
+                        
+                lbl_niscope = tk.Label(left_f, text="NI-SCOPE", font=("Segoe UI", 8, "bold italic"), bg="#8c97a8", fg="black")
+                lbl_niscope.pack(side="top")
+                
+                sunken_panel = tk.Frame(top_row, bg="#8590a1", bd=2, relief="sunken")
+                sunken_panel.pack(side="right", fill="both", expand=True)
+                
+                ch1_v = save_dict.get("Expected Voltage [kV]", "100")
+                ch1_t = save_dict.get("ch1_type", "Voltage")
+                ch1_u = "kV" if ch1_t == "Voltage" else "A"
+                
+                ch2_c = save_dict.get("Expected Current [A]", "300")
+                ch2_t = save_dict.get("ch2_type", "Current")
+                ch2_u = "A" if ch2_t == "Current" else "kV"
+                
+                pol = save_dict.get("Polarity", "Negative")
+                
+                tk.Label(sunken_panel, text=f"CH1: {ch1_v} {ch1_u}", font=("Segoe UI", 9, "bold"), fg="white", bg="#8590a1").pack(pady=(6, 1))
+                tk.Label(sunken_panel, text=f"CH2: {ch2_c} {ch2_u}", font=("Segoe UI", 9, "bold"), fg="white", bg="#8590a1").pack(pady=1)
+                tk.Label(sunken_panel, text=f"Polarity: {pol}", font=("Segoe UI", 9, "bold"), fg="white", bg="#8590a1").pack(pady=1)
+                
+                lbl_status = tk.Label(sunken_panel, text="Waiting Waves......", font=("Segoe UI", 9, "bold"), fg="white", bg="#8590a1")
+                lbl_status.pack(pady=(1, 4))
+                
+                prog_bar = ttk.Progressbar(sunken_panel, orient="horizontal", length=220, mode="determinate", maximum=100)
+                
+                bot_row = tk.Frame(box, bg="#8c97a8")
+                bot_row.pack(fill="x", side="bottom", pady=(0, 6))
+                
+                lbl_abort = tk.Label(bot_row, text="Double Click to Abort Acquisition", font=("Segoe UI", 9, "bold"), fg="#ffff00", bg="#8c97a8")
+                lbl_abort.pack(anchor="center")
+                
+                # Position centered on main screen
+                nw, nh = 480, 175
+                sw = parent_frame.winfo_screenwidth()
+                sh = parent_frame.winfo_screenheight()
+                nx = (sw - nw) // 2
+                ny = (sh - nh) // 2
+                ni_dialog.geometry(f"{nw}x{nh}+{nx}+{ny}")
+                ni_dialog.attributes("-topmost", True)
+                ni_dialog.lift()
+                ni_dialog.focus_force()
+                try:
+                    ni_dialog.grab_set()
+                except Exception:
+                    pass
+                
+                # Double click abort handler
+                last_click_time = [0.0]
+                def abort_acquisition(event=None):
+                    parent_frame.is_acquiring = False
+                    if hasattr(ni_dialog, 'poll_job') and ni_dialog.poll_job:
+                        parent_frame.after_cancel(ni_dialog.poll_job)
+                        ni_dialog.poll_job = None
+                    if hasattr(ni_dialog, 'prog_job') and ni_dialog.prog_job:
+                        parent_frame.after_cancel(ni_dialog.prog_job)
+                        ni_dialog.prog_job = None
+                    if not is_demo and app and getattr(app, 'chandle', None):
+                        try:
+                            scope_m = read_control_info().get('Scope', 'ps5000a')
+                            ps_stop = PicoScopeProxy(scope_m)
+                            ps_stop.ps5000aStop(app.chandle)
+                        except Exception:
+                            pass
+                    try:
+                        ni_dialog.grab_release()
+                    except Exception:
+                        pass
+                    try:
+                        ni_dialog.destroy()
+                    except:
+                        pass
+                    if hasattr(parent_frame, 'enter_btn'):
+                        parent_frame.enter_btn.config(state="normal", bg="#32cd32", text="ENTER")
+                    print("[NI-SCOPE] Acquisition aborted by user.")
+                    
+                def on_single_click(event=None):
+                    import time
+                    now = time.time()
+                    if now - last_click_time[0] < 0.45:
+                        abort_acquisition(event)
+                    last_click_time[0] = now
+                    
+                def bind_recursive_abort(widget):
+                    widget.bind("<Double-Button-1>", abort_acquisition)
+                    widget.bind("<Button-1>", on_single_click, add="+")
+                    for child in widget.winfo_children():
+                        bind_recursive_abort(child)
+                        
+                bind_recursive_abort(ni_dialog)
+                
+                # Waveform arrival transition handler
+                def on_wave_arrived():
+                    parent_frame.is_acquiring = False
+                    try:
+                        ni_dialog.grab_release()
+                    except Exception:
+                        pass
+                    try:
+                        ni_dialog.destroy()
+                    except:
+                        pass
+                    if hasattr(parent_frame, 'enter_btn'):
+                        parent_frame.enter_btn.config(state="normal", bg="#32cd32", text="ENTER")
+                    if hasattr(parent_frame, 'setup_poll_job') and parent_frame.setup_poll_job:
+                        parent_frame.after_cancel(parent_frame.setup_poll_job)
+                        parent_frame.setup_poll_job = None
+                    if app and hasattr(app, 'show_waveform_screen'):
+                        app.show_waveform_screen()
+
+                # Progress bar animation (0% -> 100%)
+                def animate_progress(val=0):
+                    if not ni_dialog.winfo_exists():
+                        return
+                    if val <= 100:
+                        prog_bar['value'] = val
+                        ni_dialog.prog_job = parent_frame.after(15, lambda: animate_progress(val + 4))
+                    else:
+                        ni_dialog.prog_job = parent_frame.after(100, on_wave_arrived)
+
+                def on_wave_captured():
+                    if not ni_dialog.winfo_exists():
+                        return
+                    if hasattr(ni_dialog, 'poll_job') and ni_dialog.poll_job:
+                        parent_frame.after_cancel(ni_dialog.poll_job)
+                        ni_dialog.poll_job = None
+                    lbl_status.config(text="Waveform Captured", fg="#32cd32")
+                    prog_bar.pack(pady=(2, 6))
+                    animate_progress(0)
+
+                # Polling for waveform trigger: does NOT navigate until wave is actually captured
+                from waveform_hw import init_scope, run_hardware_block, is_hardware_ready, fetch_hardware_data
+                from waveform_utils import parse_time_to_ns, get_voltage_range_enum, calc_tb
+                
+                is_demo = getattr(app, 'is_demo_mode', False) if app else True
+                
+                # If physical hardware is connected, arm the hardware block!
+                if not is_demo and app and getattr(app, 'is_scope_connected', False):
+                    try:
+                        if getattr(app, 'chandle', None) is None:
+                            init_scope(app, app.config)
+                            
+                        time_str = save_dict.get("Window Time", "100 us")
+                        total_time_ns = parse_time_to_ns(time_str)
+                        timebase, noSamples = calc_tb(total_time_ns)
+                        
+                        ch1_att = float(save_dict.get('ch1_int', 1)) * float(save_dict.get('ch1_ext', 1))
+                        ch2_att = float(save_dict.get('ch2_int', 1)) * float(save_dict.get('ch2_ext', 1))
+                        exp_v1 = float(save_dict.get('Expected Voltage [kV]', 100)) * 1000.0 if save_dict.get('ch1_type') == 'Voltage' else float(save_dict.get('Expected Current [A]', 300))
+                        exp_v2 = float(save_dict.get('Expected Voltage [kV]', 100)) * 1000.0 if save_dict.get('ch2_type') == 'Voltage' else float(save_dict.get('Expected Current [A]', 300))
+                        
+                        max_mv_A = abs((exp_v1 / ch1_att if ch1_att != 0 else exp_v1) * 1000.0)
+                        max_mv_B = abs((exp_v2 / ch2_att if ch2_att != 0 else exp_v2) * 1000.0)
+                        
+                        range_enum_A = get_voltage_range_enum(max(1000, max_mv_A * 1.2))
+                        range_enum_B = get_voltage_range_enum(max(1000, max_mv_B * 1.2))
+                        
+                        app.capture_state = "WAITING"
+                        armed = run_hardware_block(
+                            app, app.config, total_time_ns, max_mv_A, max_mv_B, time_str,
+                            range_enum_A, range_enum_B, timebase, noSamples, "14 bits"
+                        )
+                        print(f"[NI-SCOPE] Hardware block armed: {armed}")
+                    except Exception as e:
+                        print(f"[NI-SCOPE] Hardware arm error: {e}")
+
+                poll_count = [0]
+                def poll_trigger():
+                    if not ni_dialog.winfo_exists():
+                        return
+                    
+                    poll_count[0] += 1
+                    if is_demo:
+                        # In demo mode, simulate waiting for trigger pulse (3000ms)
+                        if poll_count[0] >= 60: # ~1800ms
+                            print("[NI-SCOPE] Simulated trigger fired!")
+                            on_wave_captured()
+                            return
+                    else:
+                        # Real physical scope: wait for hardware trigger to fire
+                        if poll_count[0] % 30 == 0:
+                            print("[NI-SCOPE] Scope armed and waiting for trigger...")
+                        if is_hardware_ready(app):
+                            print("[NI-SCOPE] Hardware trigger detected! Capturing waveform...")
+                            try:
+                                if app and hasattr(app, 'config'):
+                                    app.prefetched_data = fetch_hardware_data(app, app.config)
+                            except Exception as e:
+                                print(f"[NI-SCOPE] Fetch error: {e}")
+                            on_wave_captured()
+                            return
+                        # Strict hardware trigger only: NO blind timeout capture!
+                            
+                    ni_dialog.poll_job = parent_frame.after(30, poll_trigger)
+
+                ni_dialog.poll_job = parent_frame.after(30, poll_trigger)
+                
+                # Universal Force Trigger: Pressing Space, Enter, or Right-Click immediately captures
+                def force_trigger(event=None):
+                    print("[NI-SCOPE] Force trigger requested by user!")
+                    if not is_demo and app and getattr(app, 'chandle', None):
+                        try:
+                            scope_m = read_control_info().get('Scope', 'ps5000a')
+                            ps = PicoScopeProxy(scope_m)
+                            ps.ps5000aStop(app.chandle)
+                            app.prefetched_data = fetch_hardware_data(app, app.config)
+                        except Exception as e:
+                            print(f"[NI-SCOPE] Force fetch: {e}")
+                    on_wave_captured()
+
+                ni_dialog.bind("<space>", force_trigger)
+                ni_dialog.bind("<Return>", force_trigger)
+                ni_dialog.focus_set()
+
+            def show_winding_dialog():
+                win_dlg = tk.Toplevel(parent_frame)
+                win_dlg.overrideredirect(True)
+                win_dlg.configure(bg="#8c97a8")
+                win_dlg.attributes("-topmost", True)
+                
+                box = tk.Frame(win_dlg, bg="#8c97a8", bd=2, relief="groove")
+                box.pack(fill="both", expand=True, padx=2, pady=2)
+                
+                f_inputs = tk.Frame(box, bg="#8c97a8")
+                f_inputs.pack(fill="x", padx=12, pady=(10, 4))
+                
+                tk.Label(f_inputs, text="Winding Definition", font=("Segoe UI", 9, "bold"), bg="#8c97a8", fg="#1e293b").grid(row=0, column=0, sticky="w", pady=4)
+                e_wind = tk.Entry(f_inputs, font=("Segoe UI", 9), bg="#cbd5e1", fg="#1e293b", bd=2, relief="sunken", width=18)
+                e_wind.grid(row=0, column=1, sticky="e", padx=(12, 0), pady=4)
+                e_wind.insert(0, saved_config.get("winding_definition", ""))
+                
+                tk.Label(f_inputs, text="Phase", font=("Segoe UI", 9, "bold"), bg="#8c97a8", fg="#1e293b").grid(row=1, column=0, sticky="w", pady=4)
+                e_phase = tk.Entry(f_inputs, font=("Segoe UI", 9), bg="#cbd5e1", fg="#1e293b", bd=2, relief="sunken", width=18)
+                e_phase.grid(row=1, column=1, sticky="e", padx=(12, 0), pady=4)
+                e_phase.insert(0, saved_config.get("phase", ""))
+                
+                tk.Label(f_inputs, text="Tap Changer Pos", font=("Segoe UI", 9, "bold"), bg="#8c97a8", fg="#1e293b").grid(row=2, column=0, sticky="w", pady=4)
+                e_tap = tk.Entry(f_inputs, font=("Segoe UI", 9), bg="#cbd5e1", fg="#1e293b", bd=2, relief="sunken", width=18)
+                e_tap.grid(row=2, column=1, sticky="e", padx=(12, 0), pady=4)
+                e_tap.insert(0, saved_config.get("tap_changer_pos", ""))
+                
+                div = tk.Frame(box, height=2, bd=1, relief="groove", bg="#8c97a8")
+                div.pack(fill="x", padx=8, pady=(4, 6))
+                
+                def do_winding_ok():
+                    w_val = e_wind.get().strip()
+                    p_val = e_phase.get().strip()
+                    t_val = e_tap.get().strip()
+                    
+                    saved_config["winding_definition"] = w_val
+                    saved_config["phase"] = p_val
+                    saved_config["tap_changer_pos"] = t_val
+                    save_dict["winding_definition"] = w_val
+                    save_dict["phase"] = p_val
+                    save_dict["tap_changer_pos"] = t_val
+                    
+                    if app and hasattr(app, 'config'):
+                        app.config["winding_definition"] = w_val
+                        app.config["phase"] = p_val
+                        app.config["tap_changer_pos"] = t_val
+                        
+                    save_config(saved_config)
+                    try:
+                        win_dlg.grab_release()
+                    except Exception:
+                        pass
+                    win_dlg.destroy()
+                    show_niscope_dialog()
+                    
+                def cancel_winding(event=None):
+                    parent_frame.is_acquiring = False
+                    try:
+                        win_dlg.grab_release()
+                    except Exception:
+                        pass
+                    try:
+                        win_dlg.destroy()
+                    except:
+                        pass
+                    if hasattr(parent_frame, 'enter_btn'):
+                        parent_frame.enter_btn.config(state="normal", bg="#32cd32", text="ENTER")
+                        
+                win_dlg.bind("<Escape>", cancel_winding)
+                
+                btn_row = tk.Frame(box, bg="#8c97a8")
+                btn_row.pack(fill="x", padx=10, pady=(0, 6))
+                btn_ok = tk.Button(btn_row, text="Ok", bg="#32cd32", fg="black", font=("Segoe UI", 9, "bold"), relief="raised", bd=2, width=8, cursor="hand2", command=do_winding_ok)
+                btn_ok.pack(side="right")
+                
+                # Position beside enter button
+                dw, dh = 310, 150
+                bx = enter_btn.winfo_rootx()
+                by = enter_btn.winfo_rooty()
+                bw = enter_btn.winfo_width()
+                bh = enter_btn.winfo_height()
+                
+                x = bx - dw - 10
+                y = by + bh - dh
+                if x < 10:
+                    x = bx + bw + 10
+                if y < 10:
+                    y = 10
+                    
+                win_dlg.geometry(f"{dw}x{dh}+{x}+{y}")
+                win_dlg.lift()
+                win_dlg.focus_force()
+                try:
+                    win_dlg.grab_set()
+                except Exception:
+                    pass
+                e_wind.focus_set()
+
+            if hasattr(parent_frame, 'enter_btn'):
+                parent_frame.enter_btn.config(state="disabled")
+                
+            show_winding_dialog()
+            
+    def open_test_path_dialog():
+        from tkinter import filedialog, simpledialog, messagebox
+        
+        default_dir = saved_config.get("test_path", os.path.join(BASE_DIR, "Capture Data"))
+        os.makedirs(default_dir, exist_ok=True)
+        
+        dialog = tk.Toplevel(parent_frame)
+        dialog.title("Configure Test Path")
+        dialog.geometry("480x160")
+        dialog.configure(bg="#8c97a8")
+        dialog.resizable(False, False)
+        dialog.transient(parent_frame.winfo_toplevel())
+        dialog.grab_set()
+        
+        try:
+            dialog.update_idletasks()
+            pw = parent_frame.winfo_toplevel()
+            x = pw.winfo_rootx() + (pw.winfo_width() - 480) // 2
+            y = pw.winfo_rooty() + (pw.winfo_height() - 160) // 2
+            dialog.geometry(f"+{x}+{y}")
+        except:
+            pass
+            
+        box = tk.Frame(dialog, bg="#8c97a8", bd=2, relief="groove")
+        box.pack(fill="both", expand=True, padx=8, pady=8)
+        
+        tk.Label(box, text="Configure Test Path", bg="#8c97a8", fg="#1e293b",
+                 font=("Segoe UI", 10, "bold")).pack(anchor="w", padx=10, pady=(8, 4))
+                 
+        entry_frame = tk.Frame(box, bg="#adb4ce", bd=2, relief="sunken")
+        entry_frame.pack(fill="x", padx=10, pady=(2, 12))
+        
+        path_var = tk.StringVar(value=default_dir)
+        path_entry = tk.Entry(entry_frame, textvariable=path_var, font=("Segoe UI", 9),
+                              bg="#adb4ce", fg="#1e293b", relief="flat", bd=0)
+        path_entry.pack(side="left", fill="x", expand=True, padx=6, pady=4)
+        
+        def do_new():
+            parent_dir = path_var.get().strip()
+            if not os.path.exists(parent_dir):
+                parent_dir = os.getcwd()
+            name = simpledialog.askstring("New Folder", "Enter new test folder name:", parent=dialog)
+            if name:
+                new_folder = os.path.join(parent_dir, name.strip())
+                try:
+                    os.makedirs(new_folder, exist_ok=True)
+                    path_var.set(os.path.normpath(new_folder))
+                except Exception as e:
+                    messagebox.showerror("Error", f"Could not create folder: {e}", parent=dialog)
+                    
+        def do_choose():
+            cur = path_var.get().strip()
+            initial = cur if os.path.exists(cur) else os.getcwd()
+            selected = filedialog.askdirectory(title="Choose Test Path", initialdir=initial, parent=dialog)
+            if selected:
+                path_var.set(os.path.normpath(selected))
+                
+        def do_ok():
+            chosen = path_var.get().strip()
+            if chosen:
+                os.makedirs(chosen, exist_ok=True)
+                saved_config["test_path"] = chosen
+                save_config(saved_config)
+                if app and hasattr(app, 'config'):
+                    app.config['test_path'] = chosen
+            dialog.destroy()
+            
+        btn_row = tk.Frame(box, bg="#8c97a8")
+        btn_row.pack(side="bottom", pady=(0, 10))
+        
+        btn_new = tk.Button(btn_row, text="New", bg="#e53935", fg="black", font=("Segoe UI", 9, "bold"),
+                            relief="raised", bd=2, width=8, cursor="hand2", command=do_new)
+        btn_new.pack(side="left", padx=6)
+        
+        btn_choose = tk.Button(btn_row, text="Choose", bg="#facc15", fg="black", font=("Segoe UI", 9, "bold"),
+                               relief="raised", bd=2, width=8, cursor="hand2", command=do_choose)
+        btn_choose.pack(side="left", padx=6)
+        
+        btn_ok = tk.Button(btn_row, text="Ok", bg="#32cd32", fg="black", font=("Segoe UI", 9, "bold"),
+                           relief="raised", bd=2, width=8, cursor="hand2", command=do_ok)
+        btn_ok.pack(side="left", padx=6)
+
+    test_path_btn = tk.Button(right_panel, text="Test Path", bg="#d1d5db", fg="black", font=("Segoe UI", 10, "bold"), relief="raised", borderwidth=2, width=12, height=1, pady=0, cursor="hand2", command=open_test_path_dialog)
+    test_path_btn.pack(pady=(10, 5), padx=10, anchor="e")
+    parent_frame.test_path_btn = test_path_btn
+    parent_frame.input_widgets.append(test_path_btn)
+
     enter_btn = tk.Button(right_panel, text="ENTER", bg="#32cd32", fg="black", font=("Segoe UI", 10, "bold"), relief="raised", borderwidth=2, width=12, height=1, pady=0, cursor="hand2", command=on_enter_click)
-    enter_btn.pack(pady=(10, 0), padx=10, anchor="e")
+    enter_btn.pack(pady=(0, 0), padx=10, anchor="e")
     parent_frame.enter_btn = enter_btn
-    parent_frame.input_widgets.append(enter_btn)
 
     # --- Left Panel Elements (Channels) ---
     channels_frame = tk.Frame(left_panel, bg="#8c97a8", relief="groove", borderwidth=2)
@@ -496,6 +935,10 @@ def build_setup_ui(parent_frame, app=None):
     create_channel(channels_frame, 1, "Channel 2", c2_active, c2_type, c2_int, c2_ext)
     
     def poll_hardware_setup():
+        if getattr(parent_frame, 'is_acquiring', False):
+            if hasattr(parent_frame, 'winfo_exists') and parent_frame.winfo_exists():
+                parent_frame.setup_poll_job = parent_frame.after(1500, poll_hardware_setup)
+            return
         if app and not getattr(app, 'is_demo_mode', False):
             try:
                 conn = app.try_connect_scope()
@@ -510,6 +953,7 @@ def build_setup_ui(parent_frame, app=None):
     poll_hardware_setup()
 
 def update_status(parent_frame, is_connected):
+    if getattr(parent_frame, 'is_acquiring', False): return
     if not hasattr(parent_frame, 'status_canvas'): return
     if is_connected:
         parent_frame.status_canvas.itemconfig(parent_frame.led, fill="#32cd32")
